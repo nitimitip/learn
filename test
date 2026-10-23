@@ -1,29 +1,428 @@
+/******************************************************************************
+  V2-07 - OPTIMIZED PROCEDURE - NOT EXECUTED - REVIEW AND TEST BEFORE DEPLOYMENT
+  Procedure : [dbo].[PRC_ACT_uspActActQuery_v4]  (Find Activity screen)
+  Original  : QPID_SP/PRC_ACT_uspActActQuery_v4.sql (analysed in B27, not changed)
+  Batch     : V2-07 (2026-10-22)
+  Generated : optimization_v2/tools/gen_v2_07.py (inverse transform ==
+              original; emulated head text checked)
+  Depends on: nothing new. Phase-1 index 10 (MT_SYS_LOV LOV_NAME) helps the
+              inline lookups; without it they seek ADM_IX_LOV_VALUE_Includes.
 
-SELECT n.v AS mm,
-       dbo.CDMS_ACT_LOV_TypCatDecode(n.v, 'status') AS live_function,
-       CASE n.v WHEN 1 THEN 'sysStatusEnquiry' WHEN 3 THEN 'sysStatusProject'
-                WHEN 4 THEN 'sysStatusProject' WHEN 5 THEN 'sysStatusMarketActivity'
-                WHEN 6 THEN 'sysStatusQuote' WHEN 10 THEN 'sysStatusComplaint'
-                WHEN 11 THEN 'sysStatusTask' WHEN 12 THEN 'sysStatusTask'
-                WHEN 14 THEN 'sysStatusTender' WHEN 15 THEN 'sysMUStatus'
-                WHEN 16 THEN 'sysStatusProject' WHEN 17 THEN 'sysStatusEstimate' END AS v2_07_case
-FROM (SELECT TOP (1002) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 2 AS v
-      FROM sys.all_columns a CROSS JOIN sys.all_columns b) n
-WHERE ISNULL(dbo.CDMS_ACT_LOV_TypCatDecode(n.v, 'status'), '<null>')
-   <> ISNULL(CASE n.v WHEN 1 THEN 'sysStatusEnquiry' WHEN 3 THEN 'sysStatusProject'
-                WHEN 4 THEN 'sysStatusProject' WHEN 5 THEN 'sysStatusMarketActivity'
-                WHEN 6 THEN 'sysStatusQuote' WHEN 10 THEN 'sysStatusComplaint'
-                WHEN 11 THEN 'sysStatusTask' WHEN 12 THEN 'sysStatusTask'
-                WHEN 14 THEN 'sysStatusTend'
-                WHEN 16 THEN 'sysStatusProject' WHEN 17 THEN 'sysStatusEstimate' END, '<null>')
-ORDER BY n.v;
+  WHY:
+    Production baseline: 24 execs, avg 47,461.52 ms, CPU 29,719.55 ms
+    (serial), 4,069,170 reads. The outer SELECT DISTINCT TOP n ... ORDER BY
+    evaluates per qualifying row, before the sort / TOP:
+      fn_rpt_translateSYSLOV x2 (an MT_SYS_LOV lookup each)
+      CDMS_ACT_LOV_TypCatDecode x1, which also calls dbo.intRefPrefix
+        on every call although the 'status' result does not use it.
+    Non-inlined scalar UDFs run row by row and force a serial plan.
+
+  WHAT CHANGED (inside the dynamic text only):
+    1. Activity / Status: the same MT_SYS_LOV lookup as inline scalar
+       subqueries (no UDF call per row). The status list name is a CASE
+       on AE_metaModelType2 that the SP builds once per call from the live
+       CDMS_ACT_LOV_TypCatDecode (mm -1..30, 32 calls) into @StatusCase.
+       (Revision 2, 2026-10-23: the hardcoded CASE of revision 1 was
+       refused by G1 on UAT; types 2, 4, 11, 13 differed.)
+    2. Outer re-join of BT_CUSTOMER_MASTER removed: [Customer Name] =
+       A.[Cutomer Name] (the same PK row, already joined in every branch).
+    3. @SqlString VARCHAR(5000) -> VARCHAR(MAX).
+    4. CREATE -> ALTER. Nothing else (filters, branches, hints, ORDER BY,
+       TOP and the PRINT are unchanged).
+
+  WHY IT IS EQUIVALENT:
+    - Lookup: same table, same three predicates, LOV_DESC cut to 50
+      characters exactly as the UDF's VARCHAR(50) variable did, NULL when
+      no row matches (as the UDF), result typed VARCHAR(MAX) (as the UDF).
+      Several live rows per (name, value): the UDF returns the last one
+      read; guard G2 refuses if such rows have different descriptions.
+    - Status list name: the CASE is built from the live function, so it
+      equals it for mm -1..30; mm without a status is left out of the CASE
+      (ELSE NULL, as the function). Guard G1 refuses if any mm in
+      -1..1000 outside -1..30 has a status; V2-07.2 checks real values
+      beyond 1000.
+    - Collation: guard G3 (the value side changes from a parameter to a
+      column).
+    - Customer name: every branch of A inner-joins BT_CUSTOMER_MASTER on
+      the same key, CUST_ID is its PK, so the outer join matched exactly
+      that row.
+
+  BEHAVIOUR DIFFERENCE (sign-off, same item as B06-2): searches whose text
+    exceeded 5,000 characters (two date ranges + a longer description)
+    failed with error 102 / 105 and now run.
+
+  NOT CHANGED (B27 findings, app team): Category / Type / Status search
+    still fails with error 207 (A.ae_category); unescaped literals; an
+    unknown assigned person returns nothing.
+
+  EXPECTED: an estimate, not measured: most of the 29.7 s CPU (per-row UDF
+    calls) and ~3 reads per row (outer customer seek) go; the plan may run
+    parallel. The scans/seeks that find the qualifying rows are unchanged.
+
+  ROLLBACK: optimization_v2/rollback/PRC_ACT_uspActActQuery_v4_ORIGINAL.sql
+******************************************************************************/
+-- Guards (V2-07). Any failure sets NOEXEC ON, so the ALTER below is
+
+-- compiled but NOT executed; the last batch switches NOEXEC off again.
+
+-- G1: the SP builds its status CASE from the live
+
+--     CDMS_ACT_LOV_TypCatDecode for mm -1..30 only. Refuse if any mm in
+
+--     -1..1000 outside that range has a status list name.
+
+IF EXISTS (SELECT 1 FROM (SELECT TOP (1002) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 2 AS v FROM sys.all_columns a CROSS JOIN sys.all_columns b) n
+
+           WHERE n.v NOT BETWEEN -1 AND 30
+
+             AND dbo.CDMS_ACT_LOV_TypCatDecode(n.v, 'status') IS NOT NULL)
+
+BEGIN
+
+    PRINT 'REFUSED (G1): CDMS_ACT_LOV_TypCatDecode(mm, ''status'') is not NULL for an mm outside -1..30. Widen STATUS_RANGE.';
+
+    SET NOEXEC ON;
+
+END
+
+GO
+
+-- G2: fn_rpt_translateSYSLOV returns the LAST row it reads when a
+
+--     (LOV_NAME, LOV_VALUE) pair has several live rows; TOP (1) may
+
+--     pick another. Refuse if any such pair has different descriptions.
+
+IF EXISTS (SELECT 1 FROM MT_SYS_LOV
+
+           WHERE (LOV_NAME = 'actType' OR LOV_NAME IN (SELECT dbo.CDMS_ACT_LOV_TypCatDecode(r.v, 'status') FROM (VALUES (-1), (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14), (15), (16), (17), (18), (19), (20), (21), (22), (23), (24), (25), (26), (27), (28), (29), (30)) r(v)))
+
+             AND lov_deleted = 0
+
+           GROUP BY LOV_NAME, LOV_VALUE
+
+           HAVING COUNT(DISTINCT CAST(LOV_DESC AS VARCHAR(50))) > 1
+
+               OR (COUNT(*) > 1 AND COUNT(LOV_DESC) BETWEEN 1 AND COUNT(*) - 1))
+
+BEGIN
+
+    PRINT 'REFUSED (G2): duplicate live LOV rows with different descriptions (V2-07.3 lists them).';
+
+    SET NOEXEC ON;
+
+END
+
+GO
+
+-- G3: the UDF compared LOV_VALUE with a parameter (database default
+
+--     collation); the inline form compares two columns. The UDF also
+
+--     returned LOV_DESC in the database default collation, and the
+
+--     outer DISTINCT compares it. Refuse unless MT_SYS_LOV.LOV_VALUE,
+
+--     LOV_DESC and every AE_status use the database default.
+
+IF EXISTS (SELECT 1 FROM sys.columns
+
+           WHERE ((object_id = OBJECT_ID('dbo.MT_SYS_LOV') AND name IN ('LOV_VALUE', 'LOV_DESC'))
+
+               OR (object_id IN (OBJECT_ID('dbo.BT_ENQUIRY_MASTER'), OBJECT_ID('dbo.BT_PROJ_U_HEADER'), OBJECT_ID('dbo.BT_STK_HEADER'), OBJECT_ID('dbo.BT_CTK_HEADER'), OBJECT_ID('dbo.BT_PROJ_HEADER')) AND name = 'AE_status'))
+
+             AND ISNULL(collation_name, '') <> CONVERT(sysname, DATABASEPROPERTYEX(DB_NAME(), 'Collation')))
+
+BEGIN
+
+    PRINT 'REFUSED (G3): LOV_VALUE / LOV_DESC / AE_status collation differs from the database default.';
+
+    SET NOEXEC ON;
+
+END
+
+GO
+
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/* SP1*/
+-- [PRC_ACT_uspActActQuery_v2] '','','','','25','','','','','','','','test',''
+ALTER  PROCEDURE [dbo].[PRC_ACT_uspActActQuery_v4]
+(
+@ActType INT,
+@extRef VARCHAR(50),
+@Category VARCHAR(100),
+@Type VARCHAR(100),
+@Date1 INT,
+@Date1From DATETIME,
+@Date1To DATETIME,
+@Date2 INT,
+@Date2From DATETIME,
+@Date2To DATETIME,
+@Status VARCHAR(50),
+@Ref VARCHAR(50),
+@Name VARCHAR(100),
+@Description VARCHAR(100),
+@AssignedToPerson VARCHAR(100))
+
+AS
+-- =============================================
+-- Author:		<Madhumita Mondal>
+-- Create date: <29-04-2021>
+-- Description:	<Search By Site Name,Post Code,Street :: Advance Activity Search>
+-- =============================================
+DECLARE @CompanyID INT=1000
+DECLARE @Date1Str VARCHAR(255)
+DECLARE @Date2Str VARCHAR(255)
+DECLARE @SqlString VARCHAR(MAX)
+DECLARE @TopRows INT
+DECLARE @vAssignedTopersonId INT
 
 
 
 
 
 
+SELECT @vAssignedTopersonId =INT_USR_ID
+	FROM MT_USERS 
+	WHERE USER_FIRSTNAME + ' ' + USER_LASTNAME = @AssignedToPerson
 
-SELECT o.name, m.definition
-FROM sys.sql_modules m JOIN sys.objects o ON o.object_id = m.object_id
-WHERE o.name IN ('CDMS_ACT_LOV_TypCatDecode', 'intRefPrefix');
+SELECT @TopRows = CONVERT(INT,SystemParamNvalue)
+FROM MT_SYSTEMPARAMETERS
+WHERE SystemParamKey = 'TopSearchRows'
+--SET @ActType=1
+
+------- DECODE DATE 1
+IF @Date1 <> -1 
+BEGIN
+	SET @Date1Str = 'A.' + dbo.fn_ACT_LOV_SearchDateDecode(@Date1)
+END
+------- DECODE DATE 2
+IF @Date2 <> -1 
+BEGIN
+	SET @Date2Str = 'A.' + dbo.fn_ACT_LOV_SearchDateDecode(@Date2)
+END
+--, COALESCE(Con.con_personalTitle,'''')+'' '' + COALESCE(Con.con_forename,'''')+ '' '' +COALESCE(Con.con_surname,'''') AS [Customer Contact Name]	
+--' + CHAR(13)+ CHAR(10)
+--SET @SqlString = 'SELECT DISTINCT TOP ' + CONVERT(VARCHAR, @TopRows) + ' ae.AE_internalRef As Ref,dbo.fn_rpt_translateSYSLOV(''actType'', ae.AE_metaModelType2) as Activity, '
+--SET @SqlString = @SqlString + 'ae.AE_summaryDescription As [Description],dbo.fn_rpt_translateSYSLOV(dbo.CDMS_ACT_LOV_TypCatDecode(ae.Ae_metamodeltype2, ''status''), ae.AE_status) as [Status],   '
+--SET @SqlString = @SqlString + 'ae.AE_dateCreated As [Date Created] '
+--SET @SqlString = @SqlString + 'FROM #temp ae '
+
+-- V2-07: the status list name per activity type, built once per call
+-- from the live CDMS_ACT_LOV_TypCatDecode (no UDF call per row).
+DECLARE @StatusCase VARCHAR(MAX)
+SELECT @StatusCase = 'CASE A.Ae_metamodeltype2'
+    + ISNULL((SELECT ' WHEN ' + CONVERT(VARCHAR(11), x.v) + ' THEN ''' + REPLACE(x.s, '''', '''''') + ''''
+              FROM (SELECT r.v, dbo.CDMS_ACT_LOV_TypCatDecode(r.v, 'status') AS s
+                    FROM (VALUES (-1), (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14), (15), (16), (17), (18), (19), (20), (21), (22), (23), (24), (25), (26), (27), (28), (29), (30)) r(v)) x
+              WHERE x.s IS NOT NULL
+              ORDER BY x.v
+              FOR XML PATH(''), TYPE).value('.', 'VARCHAR(MAX)'), ' WHEN NULL THEN NULL')
+    + ' END'
+
+SET @SqlString = 'SELECT DISTINCT TOP ' + CONVERT(VARCHAR, @TopRows) + ' A.[AE_internalRef] As Ref,CAST((SELECT TOP (1) CAST(L1.LOV_DESC AS VARCHAR(50)) FROM MT_SYS_LOV L1 WHERE L1.LOV_NAME = ''actType'' AND L1.LOV_VALUE = CONVERT(VARCHAR(50), A.AE_metaModelType2) AND L1.lov_deleted = 0) AS VARCHAR(MAX)) as Activity,' + CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_summaryDescription  As [Description],CAST((SELECT TOP (1) CAST(L2.LOV_DESC AS VARCHAR(50)) FROM MT_SYS_LOV L2 WHERE L2.LOV_NAME = ' + @StatusCase + ' AND L2.LOV_VALUE = CONVERT(VARCHAR(50), A.AE_status) AND L2.lov_deleted = 0) AS VARCHAR(MAX)) as [Status], '+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_dateCreated As [Date Created],A.AE_metaModelType2 Type, '+ CHAR(13)+ CHAR(10) 
+
+
+SET @SqlString = @SqlString + ' A.[Cutomer Name] AS [Customer Name],Con.con_personalTitle + '' '' + Con.con_forename + '' ''+ Con.con_surname AS [Contact Name] FROM ('+ CHAR(13)+ CHAR(10)
+
+
+SET @SqlString = @SqlString + ' Select DISTINCT  A.[AE_AEID],A.[AE_internalRef],C.CUST_ID,C.cust_reference,A.ae_type,A.AE_metaModelType2,C.CUST_ORG_NAME AS [Cutomer Name],C.CUST_PRIM_ADDRID,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_externalRef,A.AE_summaryDescription,A.AE_assignedToDept,A.AE_assignedToPerson,A.AE_status,A.AE_dateCreated,C.CUST_PRIM_CONTACTID,B.siteName,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' B.addressLine3,B.addressLine5,B.addressLine8,B.postCode,A.AE_customer,A.AE_plannedStartDate,A.AE_plannedEndDate,A.AE_actualStartDate,A.AE_actualEndDate,A.AE_relativeName'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' FROM BT_ENQUIRY_MASTER A WITH (NOLOCK)'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_ADDRESS_MASTER B WITH (NOLOCK) on A.AE_address=B.ADDRESS_ID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_CUSTOMER_MASTER C WITH (NOLOCK) on A.AE_customer=C.CUST_ID'+ CHAR(13)+ CHAR(10)
+--SET @SqlString = @SqlString + ' LEFT OUTER JOIN BT_CONTACTS_MASTER D WITH (NOLOCK) on A.AE_contact=D.con_contactID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' WHERE  ISNULL(A.AE_deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(B.deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(C.CUST_DELETED,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(A.AE_isTemplate,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+
+SET @SqlString = @SqlString + ' Union all -- 1 '+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' Select DISTINCT  [AE_AEID],[AE_internalRef] ,C.CUST_ID,C.cust_reference,A.ae_type,A.AE_metaModelType2,C.CUST_ORG_NAME,C.CUST_PRIM_ADDRID,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_externalRef,A.AE_summaryDescription,A.AE_assignedToDept,A.AE_assignedToPerson,A.AE_status,A.AE_dateCreated,C.CUST_PRIM_CONTACTID,B.siteName,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' B.addressLine3,B.addressLine5,B.addressLine8,B.postCode,A.AE_customer,A.AE_plannedStartDate,A.AE_plannedEndDate,A.AE_actualStartDate,A.AE_actualEndDate,A.AE_relativeName'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' FROM BT_PROJ_U_HEADER A WITH (NOLOCK)'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_ADDRESS_MASTER B WITH (NOLOCK) on A.AE_address=B.ADDRESS_ID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_CUSTOMER_MASTER C WITH (NOLOCK) on A.AE_customer=C.CUST_ID'+ CHAR(13)+ CHAR(10)
+--SET @SqlString = @SqlString + ' LEFT OUTER JOIN BT_CONTACTS_MASTER D WITH (NOLOCK) on A.AE_contact=D.con_contactID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' WHERE  ISNULL(A.AE_deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(B.deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(C.CUST_DELETED,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(A.AE_isTemplate,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' union all -- 2'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' Select DISTINCT  [AE_AEID],[AE_internalRef],C.CUST_ID,C.cust_reference,A.ae_type,A.AE_metaModelType2,C.CUST_ORG_NAME,C.CUST_PRIM_ADDRID,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_externalRef,A.AE_summaryDescription,A.AE_assignedToDept,A.AE_assignedToPerson,A.AE_status,A.AE_dateCreated,C.CUST_PRIM_CONTACTID,B.siteName,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' B.addressLine3,B.addressLine5,B.addressLine8,B.postCode,A.AE_customer,A.AE_plannedStartDate,A.AE_plannedEndDate,A.AE_actualStartDate,A.AE_actualEndDate,A.AE_relativeName'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' from BT_STK_HEADER A WITH (NOLOCK)'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_ADDRESS_MASTER B WITH (NOLOCK) on A.AE_address=B.ADDRESS_ID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_CUSTOMER_MASTER C WITH (NOLOCK) on A.AE_customer=C.CUST_ID'+ CHAR(13)+ CHAR(10)
+--SET @SqlString = @SqlString + ' LEFT OUTER JOIN BT_CONTACTS_MASTER D WITH (NOLOCK) on A.AE_contact=D.con_contactID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' WHERE  ISNULL(A.AE_deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(B.deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(A.AE_isTemplate,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(C.CUST_DELETED,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' union all -- 3'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' Select DISTINCT  [AE_AEID],[AE_internalRef],C.CUST_ID,C.cust_reference,A.ae_type,A.AE_metaModelType2,C.CUST_ORG_NAME,C.CUST_PRIM_ADDRID,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_externalRef,A.AE_summaryDescription,A.AE_assignedToDept,A.AE_assignedToPerson,A.AE_status,A.AE_dateCreated,C.CUST_PRIM_CONTACTID,B.siteName,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' B.addressLine3,B.addressLine5,B.addressLine8,B.postCode,A.AE_customer,A.AE_plannedStartDate,A.AE_plannedEndDate,A.AE_actualStartDate,A.AE_actualEndDate,A.AE_relativeName'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' FROM BT_CTK_HEADER A WITH (NOLOCK)'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_ADDRESS_MASTER B WITH (NOLOCK) on A.AE_address=B.ADDRESS_ID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_CUSTOMER_MASTER C WITH (NOLOCK) on A.AE_customer=C.CUST_ID'+ CHAR(13)+ CHAR(10)
+--SET @SqlString = @SqlString + ' LEFT OUTER JOIN BT_CONTACTS_MASTER D WITH (NOLOCK) on A.AE_contact=D.con_contactID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' WHERE  ISNULL(A.AE_deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(B.deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(C.CUST_DELETED,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' union all -- 4'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' Select DISTINCT  [AE_AEID],[AE_internalRef],C.CUST_ID,C.cust_reference,A.ae_type,A.AE_metaModelType2,C.CUST_ORG_NAME,C.CUST_PRIM_ADDRID,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' A.AE_externalRef,A.AE_summaryDescription,A.AE_assignedToDept,A.AE_assignedToPerson,A.AE_status,A.AE_dateCreated,C.CUST_PRIM_CONTACTID,B.siteName,'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' B.addressLine3,B.addressLine5,B.addressLine8,B.postCode,A.AE_customer,A.AE_plannedStartDate,A.AE_plannedEndDate,A.AE_actualStartDate,A.AE_actualEndDate,A.AE_relativeName '+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' FROM BT_PROJ_HEADER A WITH (NOLOCK) '+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_ADDRESS_MASTER B WITH (NOLOCK) on A.AE_address=B.ADDRESS_ID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' INNER JOIN BT_CUSTOMER_MASTER C WITH (NOLOCK) on A.AE_customer=C.CUST_ID'+ CHAR(13)+ CHAR(10)
+--SET @SqlString = @SqlString + ' LEFT OUTER JOIN BT_CONTACTS_MASTER D WITH (NOLOCK) on A.AE_contact=D.con_contactID'+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' WHERE  ISNULL(A.AE_deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(B.deleted,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(C.CUST_DELETED,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ' AND isnull(A.AE_isTemplate,''N'')=''N'''+ CHAR(13)+ CHAR(10)
+SET @SqlString = @SqlString + ') A '+ CHAR(13)+ CHAR(10)
+
+ -- V2-07: outer re-join of BT_CUSTOMER_MASTER C removed; A.[Cutomer Name] is the same PK row
+ SET @SqlString = @SqlString +' LEFT OUTER JOIN BT_CONTACTS_MASTER Con WITH (NOLOCK) on Con.con_contactID=A.CUST_PRIM_CONTACTID '+ CHAR(13)+ CHAR(10) 
+
+
+IF isnull(@ActType,'')=''
+BEGIn
+SET @SqlString = @SqlString +' WHERE 1=1 '+ CHAR(13)+ CHAR(10)
+
+END
+
+IF isnull(@ActType,'')!=''
+BEGIN 
+	SET @SqlString = @SqlString + 'LEFT OUTER JOIN MT_SYS_LOV cat ON A.ae_category = cat.lov_value '+ CHAR(13)+ CHAR(10)
+	SET @SqlString = @SqlString + 'LEFT OUTER JOIN MT_SYS_LOV typ ON A.ae_type = typ.lov_value '+ CHAR(13)+ CHAR(10)
+	SET @SqlString = @SqlString + 'LEFT OUTER JOIN MT_SYS_LOV stat ON A.ae_status = stat.lov_value '+ CHAR(13)+ CHAR(10)
+END
+
+
+
+IF isnull(@ActType,'')!=''
+BEGIN
+	
+	SET @SqlString = @SqlString + ' AND A.AE_metaModelType2 = ' + CONVERT(VARCHAR,@ActType)+ CHAR(13)+ CHAR(10)
+	IF @Category is not null
+	BEGIN
+		IF CHARINDEX('%',@Category) <> 0
+			SET @SqlString = @SqlString + ' AND cat.lov_desc LIKE ''' + ISNULL(@Category,'') + ''''+ CHAR(13)+ CHAR(10)
+		ELSE
+			SET @SqlString = @SqlString + ' AND cat.lov_desc = ''' + ISNULL(@Category,'') + ''''+ CHAR(13)+ CHAR(10)
+		SET @SqlString = @SqlString + ' AND cat.lov_lovName = ''' + dbo.CDMS_ACT_LOV_TypCatDecode(@ActType,'category') + ''''+ CHAR(13)+ CHAR(10)
+	END
+	IF @Type is not null
+	BEGIN	
+		IF CHARINDEX('%',@Type) <> 0
+			SET @SqlString = @SqlString + ' AND typ.lov_desc LIKE ''' + ISNULL(@Type,'') + ''''+ CHAR(13)+ CHAR(10)
+		ELSE
+			SET @SqlString = @SqlString + ' AND typ.lov_desc = ''' + ISNULL(@Type,'') + ''''+ CHAR(13)+ CHAR(10)
+		SET @SqlString = @SqlString + ' AND typ.lov_lovName = ''' + dbo.CDMS_ACT_LOV_TypCatDecode(@ActType,'type') + ''''+ CHAR(13)+ CHAR(10)
+	END
+	IF isnull(@Status,'')!=''
+	BEGIN
+		IF CHARINDEX('%',@Status) <> 0	
+			SET @SqlString = @SqlString + ' AND stat.lov_desc LIKE ''' + ISNULL(@Status,'') + ''''+ CHAR(13)+ CHAR(10)
+		ELSE
+			SET @SqlString = @SqlString + ' AND stat.lov_desc = ''' + ISNULL(@Status,'') + ''''+ CHAR(13)+ CHAR(10)
+		SET @SqlString = @SqlString + ' AND stat.lov_lovName = ''' + dbo.CDMS_ACT_LOV_TypCatDecode(@ActType,'status') + ''''+ CHAR(13)+ CHAR(10)
+	END
+END
+
+
+
+IF isnull(@Date1From,'')!=''
+BEGIN
+	SET @SqlString = @SqlString + ' AND ' + @Date1Str + ' >= ''' + CONVERT(VARCHAR,@Date1From) + ''''+ CHAR(13)+ CHAR(10)
+END
+
+IF ISNULL(@Date1To,'')!=''
+BEGIN
+	SET @SqlString = @SqlString + ' AND ' + @Date1Str + ' <= ''' + CONVERT(VARCHAR,@Date1To) + ''''+ CHAR(13)+ CHAR(10)
+END
+
+IF isnull(@Date2From,'')!=''
+BEGIN
+	SET @SqlString = @SqlString + ' AND ' + @Date2Str + ' >= ''' + CONVERT(VARCHAR,@Date2From) + ''''+ CHAR(13)+ CHAR(10)
+END
+
+IF isnull(@Date2To,'')!=''
+BEGIN
+	SET @SqlString = @SqlString + ' AND ' + @Date2Str + ' <= ''' + CONVERT(VARCHAR,@Date2To) + ''''+ CHAR(13)+ CHAR(10)
+END
+
+
+IF isnull(@Ref,'')!=''
+BEGIN
+	IF CHARINDEX('%',@Ref) <> 0
+		SET @SqlString = @SqlString + ' AND A.AE_internalRef LIKE ''' + ISNULL(@Ref,'') + ''''+ CHAR(13)+ CHAR(10)
+	ELSE
+		SET @SqlString = @SqlString + ' AND A.AE_internalRef = ''' + ISNULL(@Ref,'') + ''''+ CHAR(13)+ CHAR(10)
+END
+
+--ADDED External Ref GM 05/09/02
+IF isnull(@extRef,'')!=''
+BEGIN
+	IF CHARINDEX('%',@extRef) <> 0
+		SET @SqlString = @SqlString + ' AND A.AE_externalRef LIKE ''' + ISNULL(@extRef,'') + ''''+ CHAR(13)+ CHAR(10)
+	ELSE
+		SET @SqlString = @SqlString + ' AND A.AE_externalRef = ''' + ISNULL(@extRef,'') + ''''+ CHAR(13)+ CHAR(10)
+END
+
+IF isnull(@AssignedToPerson,'')!=''
+BEGIN
+	IF CHARINDEX('%',@AssignedToPerson) <> 0
+		SET @SqlString = @SqlString + ' AND A.AE_assignedToPerson = ' + CONVERT(VARCHAR, @vAssignedTopersonId)+ CHAR(13)+ CHAR(10)
+	ELSE
+		SET @SqlString = @SqlString + ' AND A.AE_assignedToPerson = '+  CONVERT(VARCHAR, @vAssignedTopersonId)+ CHAR(13)+ CHAR(10)
+END
+IF isnull(@Name,'')!=''
+BEGIN
+	IF CHARINDEX('%',@Name) <> 0
+		SET @SqlString = @SqlString + ' AND A.AE_relativeName LIKE ''' + ISNULL(@Name,'') + ''''+ CHAR(13)+ CHAR(10)
+	ELSE
+		SET @SqlString = @SqlString + ' AND A.AE_relativeName = ''' + ISNULL(@Name,'') + ''''+ CHAR(13)+ CHAR(10)
+END
+
+IF isnull(@Description,'')!=''
+BEGIN
+	IF CHARINDEX('%',@Description) <> 0
+		SET @SqlString = @SqlString + ' AND A.AE_summaryDescription LIKE ''' + ISNULL(@Description,'') + ''''+ CHAR(13)+ CHAR(10)
+	ELSE
+		SET @SqlString = @SqlString + ' AND A.AE_summaryDescription = ''' + ISNULL(@Description,'') + ''''+ CHAR(13)+ CHAR(10)
+END
+
+IF @CompanyID IN (SELECT SystemParamNValue FROM CDMS_SystemParameters 
+			WHERE SystemParamKey = 'ACTIVITY_VIEW_ALL_COMPANIES'
+			AND SystemParamDeleted = 'N')
+BEGIN
+	SET @SqlString = @SqlString + ''
+END
+ELSE
+BEGIN
+	SET @SqlString = @SqlString + ' AND A.cust_companyID = ' + CONVERT(VARCHAR, @CompanyID)+ CHAR(13)+ CHAR(10)
+END
+
+SET @SqlString = @SqlString + ' ORDER BY A.AE_metaModelType2 ASC, A.ae_dateCreated DESC '+ CHAR(13)+ CHAR(10)
+
+--exec activitySearchInsert @SqlString
+-----  EXECUTE STRING HERE
+print @SqlString
+EXEC(@SqlString)
+
+GO
+
+SET NOEXEC OFF;
+GO
