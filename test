@@ -1,1 +1,29 @@
 
+SELECT n.v AS mm,
+       dbo.CDMS_ACT_LOV_TypCatDecode(n.v, 'status') AS live_function,
+       CASE n.v WHEN 1 THEN 'sysStatusEnquiry' WHEN 3 THEN 'sysStatusProject'
+                WHEN 4 THEN 'sysStatusProject' WHEN 5 THEN 'sysStatusMarketActivity'
+                WHEN 6 THEN 'sysStatusQuote' WHEN 10 THEN 'sysStatusComplaint'
+                WHEN 11 THEN 'sysStatusTask' WHEN 12 THEN 'sysStatusTask'
+                WHEN 14 THEN 'sysStatusTender' WHEN 15 THEN 'sysMUStatus'
+                WHEN 16 THEN 'sysStatusProject' WHEN 17 THEN 'sysStatusEstimate' END AS v2_07_case
+FROM (SELECT TOP (1002) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 2 AS v
+      FROM sys.all_columns a CROSS JOIN sys.all_columns b) n
+WHERE ISNULL(dbo.CDMS_ACT_LOV_TypCatDecode(n.v, 'status'), '<null>')
+   <> ISNULL(CASE n.v WHEN 1 THEN 'sysStatusEnquiry' WHEN 3 THEN 'sysStatusProject'
+                WHEN 4 THEN 'sysStatusProject' WHEN 5 THEN 'sysStatusMarketActivity'
+                WHEN 6 THEN 'sysStatusQuote' WHEN 10 THEN 'sysStatusComplaint'
+                WHEN 11 THEN 'sysStatusTask' WHEN 12 THEN 'sysStatusTask'
+                WHEN 14 THEN 'sysStatusTend'
+                WHEN 16 THEN 'sysStatusProject' WHEN 17 THEN 'sysStatusEstimate' END, '<null>')
+ORDER BY n.v;
+
+
+
+
+
+
+
+SELECT o.name, m.definition
+FROM sys.sql_modules m JOIN sys.objects o ON o.object_id = m.object_id
+WHERE o.name IN ('CDMS_ACT_LOV_TypCatDecode', 'intRefPrefix');
