@@ -1,0 +1,116 @@
+"""Diagnose a MIMP report "HTTP 401" on an AD (NTLM) protected URL.
+
+Run on the PROD server, from the appassist folder, with the same Python the
+scheduler service uses:
+
+    python diagnose_mimp_ad.py https://app.example.local/path
+
+It loads .env exactly as main_app / the scheduler service do (override=False,
+so an OS / IIS environment variable wins over the file), then walks every
+stage of modules/mimp_report/probes.py and prints which one fails.
+The password is never printed - only its length and whether it has
+leading/trailing spaces.
+"""
+import os
+import sys
+from urllib.parse import urlparse
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
+
+WATCHED = ("URL_NTLM_USER", "URL_NTLM_PASS",
+           "HEALTH_NTLM_ALLOWED_HOSTS", "MIMP_NTLM_ALLOWED_HOSTS",
+           "CORPORATE_CA_BUNDLE", "DISABLE_SSL_VERIFY")
+
+
+def show(label, ok, detail=""):
+    print("[%s] %s%s" % ("OK  " if ok else "FAIL", label,
+                         (" - " + detail) if detail else ""))
+
+
+def main():
+    if len(sys.argv) != 2:
+        print(__doc__)
+        return 2
+    url = sys.argv[1].strip()
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
+    print("Python: %s" % sys.version.split()[0])
+    print("URL host: %r\n" % host)
+
+    # 1. Variables already set in the OS / IIS environment win over .env.
+    preset = [k for k in WATCHED if k in os.environ]
+    show("No OS-level overrides of .env values", not preset,
+         ("set outside .env (these WIN over .env): %s" % ", ".join(preset))
+         if preset else "")
+
+    # 2. Load .env the same way the app does.
+    env_path = os.path.join(BASE_DIR, ".env")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env_path, override=False)
+        show(".env loaded", os.path.isfile(env_path), env_path)
+    except ImportError:
+        show(".env loaded", False, "python-dotenv not installed")
+
+    # 3. Credentials.
+    user = os.environ.get("URL_NTLM_USER") or ""
+    pwd = os.environ.get("URL_NTLM_PASS") or ""
+    bad_chars = [c for c in user if ord(c) < 32]
+    show("URL_NTLM_USER set", bool(user), repr(user))
+    show("URL_NTLM_USER is DOMAIN\\user", "\\" in user and not bad_chars,
+         "contains control characters - a double-quoted value like "
+         "\"CORP\\tname\" turns \\t into a TAB; remove the quotes"
+         if bad_chars else "")
+    show("URL_NTLM_PASS set", bool(pwd),
+         "length %d%s" % (len(pwd), ", HAS leading/trailing spaces"
+                          if pwd != pwd.strip() else ""))
+
+    # 4. Allowlist.
+    from modules.mimp_report import probes
+    allowed = probes._ntlm_allowed_hosts()
+    show("Host is on the NTLM allowlist", host in allowed,
+         "list = %s" % (sorted(allowed) or "EMPTY"))
+
+    # 5. requests-ntlm.
+    show("requests-ntlm installed", probes._HAS_NTLM)
+
+    # 6. Anonymous request - what does the server ask for?
+    import requests
+    s = probes._probe_session()
+    try:
+        r = s.get(url, timeout=(5, 15), verify=probes._VERIFY,
+                  headers=probes.PROBE_HEADERS, allow_redirects=True)
+    except Exception as e:  # noqa: BLE001 - diagnostic, show anything
+        show("Anonymous request", False, str(e)[:200])
+        return 1
+    chain = " -> ".join([str(h.status_code) for h in r.history] +
+                        [str(r.status_code)])
+    print("\nAnonymous: status %s, final URL %s" % (chain, r.url))
+    www = r.headers.get("WWW-Authenticate", "")
+    print("WWW-Authenticate: %r" % www)
+    if r.status_code == 401 and not probes._server_offers_ntlm(r):
+        show("Server offers NTLM/Negotiate", False,
+             "401 without NTLM/Negotiate (e.g. Basic, ADFS/SSO form, or an "
+             "app-level 401) - the probe cannot log in to this kind of page")
+        return 1
+    if r.history and urlparse(r.url).hostname != urlparse(url).hostname:
+        print("NOTE: redirected to another host - put the FINAL URL in MIMP.")
+
+    # 7. Authenticated request.
+    if not (user and pwd and probes._HAS_NTLM):
+        return 1
+    r2 = s.get(url, timeout=(5, 15), verify=probes._VERIFY,
+               headers=probes.PROBE_HEADERS, allow_redirects=False,
+               auth=probes.HttpNtlmAuth(user, pwd))
+    show("NTLM login", r2.status_code < 400,
+         "status %s, WWW-Authenticate %r"
+         % (r2.status_code, r2.headers.get("WWW-Authenticate", "")))
+    if r2.status_code == 401:
+        print("  -> credentials refused: wrong password / locked account / "
+              "account lacks access, or the site accepts Kerberos only "
+              "(NTLM disabled in IIS).")
+    return 0 if r2.status_code < 400 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
