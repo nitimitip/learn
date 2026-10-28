@@ -1,0 +1,934 @@
+{% extends "application_support/_layout.html" %}
+
+{% block title %}{{ app.application_name }} · Application Support{% endblock %}
+
+{#  ---------------------------------------------------------- ACTIVE SECTION
+
+    Which section is open is read by the breadcrumb tail, the scoped module
+    bar and the panels, so it is resolved ONCE here at template level rather
+    than inside `content` - a `set` in a block is local to that block and the
+    other two would not see it.
+
+    `?tab=` puts the open section in the URL, which makes each one a shareable
+    link and renders it active server-side. The module's tab controller
+    (static/js/appsupport.js) is otherwise purely client-side and wrote only a
+    location hash, which the server never sees and which nothing restored on
+    load - a link to a section opened on Overview.
+#}
+{% set tab_labels = {'overview': 'Overview', 'quality': 'Quality',
+                     'infrastructure': 'Infrastructure',
+                     'technical': 'Technical Details', 'jobs': 'Jobs',
+                     'files': 'Files', 'tasks': 'Tasks',
+                     'issues': 'Critical Issues'} %}
+{% set active_tab = request.args.get('tab', 'overview') %}
+{% if active_tab not in tab_labels %}{% set active_tab = 'overview' %}{% endif %}
+
+{#  --------------------------------------------------------------- THE TRAIL
+
+    Home > Application Support > <tower> > <this application> > <section>.
+
+    The tail names the open section, so the trail stays true as you move
+    between tabs. The application crumb is a SWITCHER over the other
+    applications in the same tower: that is the move people actually make from
+    an application page, and doing it from the trail is far shorter than going
+    back out to the tower list and hunting for the row.
+#}
+{% block crumbs %}
+{% set siblings = sibling_applications or [] %}
+<a href="{{ url_for('index') }}">Home</a>
+<span class="crumb-sep"><i class="fas fa-chevron-right" style="font-size:9px;"></i></span>
+<a href="{{ url_for('application_support.index') }}">Application Support</a>
+<span class="crumb-sep"><i class="fas fa-chevron-right" style="font-size:9px;"></i></span>
+<a href="{{ url_for('application_support.tower_applications', tower_id=app.tower_id) }}">{{ app.tower.tower_name }}</a>
+<span class="crumb-sep"><i class="fas fa-chevron-right" style="font-size:9px;"></i></span>
+{% if siblings|length > 1 %}
+<details class="npg-menu npg-crumb-switch">
+    <summary title="Switch application" aria-haspopup="menu">
+        <span class="npg-crumb-switch-name">{{ app.application_name }}</span>
+        <svg class="npg-menu-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </summary>
+    <div class="npg-menu-list" role="menu">
+        <div class="npg-menu-head">{{ app.tower.tower_name }}</div>
+        {% for a in siblings %}
+        <a href="{{ url_for('application_support.view_application', app_id=a.id) }}" role="menuitem"
+           class="{{ 'is-active' if a.id == app.id }}"
+           {% if a.id == app.id %}aria-current="page"{% endif %}>
+            <span class="bc-pill {{ a.bc|lower }}">{{ a.bc }}</span>
+            <span>{{ a.name }}</span>
+        </a>
+        {% endfor %}
+        <hr>
+        <a class="npg-menu-all" role="menuitem" href="{{ url_for('application_support.tower_applications', tower_id=app.tower_id) }}">All applications in this tower&hellip;</a>
+    </div>
+</details>
+{% else %}
+<span class="crumb npg-crumb-switch-name" title="{{ app.application_name }}">{{ app.application_name }}</span>
+{% endif %}
+<span class="crumb-sep"><i class="fas fa-chevron-right" style="font-size:9px;"></i></span>
+{#  Kept in step with the open tab by the script at the foot of this
+    template, so it never contradicts the bar. #}
+<span class="crumb current" id="asCrumbTab">{{ tab_labels[active_tab] }}</span>
+{% endblock %}
+
+{#  ---------------------------------------------------- SCOPED MODULE BAR
+
+    This page has descended into ONE application, so the bar directly above
+    the content stops being about the module and becomes about the
+    application: its name, its own sections, and a labelled way back up to the
+    tower it belongs to.
+
+    That is the whole fix for "I clicked something and lost my application".
+    Architecture, Enterprise architect and Data quality are real destinations,
+    but at arm's length from the content they read as sections of the thing on
+    screen, and they are not. They stay one deliberate click away in the
+    module rail and in the trail above.
+#}
+{% block modbar %}
+<div class="npg-modbar is-scoped">
+    <a class="npg-modbar-back" href="{{ url_for('application_support.tower_applications', tower_id=app.tower_id) }}"
+       title="Back to {{ app.tower.tower_name }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        <span>{{ app.tower.tower_name }}</span>
+    </a>
+
+    {#  No record identity in the bar.
+
+        The name is already stated twice within a few hundred pixels - in the
+        trail directly above (where it is also the switcher) and in the page
+        heading directly below - and so is its state. A third copy earned
+        nothing and cost the sections their width. The bar answers "what can I
+        do here", the trail answers "where am I", the heading answers "what am
+        I looking at"; each says its own thing once. #}
+
+    {#  The application's sections. Same markup as before - `.tabs` with
+        `[data-tab]` / `[data-tabgroup]` buttons - because appsupport.js finds
+        tabs and panels through the DOCUMENT, not through a shared container,
+        so re-homing the strip needs no change to the controller. Only the
+        home and the skin changed. #}
+    <div class="tabs" id="appDetailTabs">
+        <button class="tab {{ 'active' if active_tab == 'overview' }}" data-tab="overview" data-tabgroup="detail" data-crumb="Overview"><i class="fas fa-circle-info"></i> Overview</button>
+        <button class="tab {{ 'active' if active_tab == 'infrastructure' }}" data-tab="infrastructure" data-tabgroup="detail" data-crumb="Infrastructure"><i class="fas fa-server"></i> Infrastructure <span class="tab-count">{{ server_details|length }}</span></button>
+        <button class="tab {{ 'active' if active_tab == 'technical' }}" data-tab="technical" data-tabgroup="detail" data-crumb="Technical Details"><i class="fas fa-microchip"></i> Technical Details <span class="tab-count">{{ tech_count }}</span></button>
+        <button class="tab {{ 'active' if active_tab == 'jobs' }}" data-tab="jobs" data-tabgroup="detail" data-crumb="Jobs"><i class="fas fa-play"></i> Jobs <span class="tab-count">{{ individual_jobs|length + suite_jobs|length }}</span></button>
+        <button class="tab {{ 'active' if active_tab == 'files' }}" data-tab="files" data-tabgroup="detail" data-crumb="Files"><i class="fas fa-file"></i> Files <span class="tab-count">{{ file_inventory|length }}</span></button>
+        <button class="tab {{ 'active' if active_tab == 'tasks' }}" data-tab="tasks" data-tabgroup="detail" data-crumb="Tasks"><i class="fas fa-tasks"></i> Tasks <span class="tab-count">{{ tasks|length }}</span></button>
+        <button class="tab {{ 'active' if active_tab == 'issues' }}" data-tab="issues" data-tabgroup="detail" data-crumb="Critical Issues"><i class="fas fa-triangle-exclamation"></i> Critical Issues <span class="tab-count">{{ critical_issues|length }}</span></button>
+        <button class="tab {{ 'active' if active_tab == 'quality' }}" data-tab="quality" data-tabgroup="detail" data-crumb="Quality"><i class="fas fa-clipboard-check"></i> Quality <span class="tab-count">{{ app_quality.percent }}%</span></button>
+    </div>
+
+    <div class="npg-modbar-actions">
+        <a class="npg-icon-btn" href="{{ url_for('application_support.about') }}"
+           title="About Application Support" aria-label="About Application Support">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg>
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% from "application_support/_quality.html" import q_chip, q_bar, q_ring, q_checks, q_optional %}
+
+{% block content %}
+{% set bc = app.business_criticality.name %}
+{% set is_admin_user = user and user.role == 'admin' %}
+
+<!-- Hero. The full summary belongs to Overview; every other section gets the
+     compact form (name + actions only) so the section's own data is what
+     fills the screen. Toggled with the tab by the script at the foot. -->
+<div class="detail-hero {{ 'is-compact' if active_tab != 'overview' }}" id="appDetailHero">
+    <div class="detail-hero-left">
+        <div class="meta-row">
+            <span class="bc-pill {{ bc|lower }}">{{ bc }}</span>
+            {# Business area. Shown even when unset, so the gap is visible. #}
+            {% if app.category %}
+            <span class="badge badge-info" title="Business area"><i class="fas fa-tags f-12"></i> {{ app.category.name }}{% if not app.category.is_active %} (retired){% endif %}</span>
+            {% else %}
+            <span class="badge badge-neutral" title="No business area recorded"><i class="fas fa-tags f-12"></i> Uncategorised</span>
+            {% endif %}
+            {# Score chip jumps to the Quality tab, where the gaps are listed. #}
+            <a href="#quality" onclick="showDetailTab('quality'); return false;"
+               style="text-decoration:none;">{{ q_chip(app_quality, label='Record quality') }}</a>
+            {% if not app_quality.meets_target %}
+            <span class="badge badge-warning" title="Target for {{ bc }} records is {{ app_quality.target }}%">
+                <i class="fas fa-triangle-exclamation f-12"></i> Below {{ app_quality.target }}% target
+            </span>
+            {% endif %}
+        </div>
+        <h1>{{ app.application_name }}</h1>
+        {% if app.application_summary %}
+        <p class="descr">{{ app.application_summary|nl2br }}</p>
+        {% endif %}
+        {% if app.remarks %}
+        <p class="descr" style="margin-top:6px;"><strong class="text-2">Remarks:</strong> {{ app.remarks|nl2br }}</p>
+        {% endif %}
+        <div class="audit-line">
+            <span>Created by <strong class="text-2">{{ app.created_by_name or '—' }}</strong>{% if app.created_at %} · {{ app.created_at.strftime('%Y-%m-%d') }}{% endif %}</span>
+            <span>·</span>
+            <span>Updated by <strong class="text-2">{{ app.updated_by_name or '—' }}</strong>{% if app.updated_at %} · {{ app.updated_at.strftime('%Y-%m-%d') }}{% endif %}</span>
+        </div>
+    </div>
+    <div class="detail-hero-right">
+        <div class="row mt-3">
+            {% if user %}
+            <div class="dropdown">
+                <button class="btn btn-sm" data-dropdown-toggle><i class="fas fa-download"></i> Download <i class="fas fa-chevron-down f-12"></i></button>
+                <div class="dropdown-menu">
+                    <a class="dropdown-item" href="{{ url_for('application_support.download_application', app_id=app.id, fmt='excel') }}"><i class="fas fa-file-excel" style="color:var(--success);"></i> Application Profile — Excel</a>
+                    <a class="dropdown-item" href="{{ url_for('application_support.download_application', app_id=app.id, fmt='pdf') }}"><i class="fas fa-file-pdf" style="color:var(--critical);"></i> Application Profile — PDF</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% if can_edit %}
+        <div class="row mt-3">
+            <div class="dropdown">
+                <button class="btn btn-sm btn-primary" data-dropdown-toggle>Manage <i class="fas fa-chevron-down f-12"></i></button>
+                <div class="dropdown-menu">
+                    <a class="dropdown-item" href="{{ url_for('application_support.edit_application', app_id=app.id) }}"><i class="fas fa-edit"></i> Edit Application</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{{ url_for('application_support.add_individual_job', app_id=app.id) }}"><i class="fas fa-play"></i> Add Individual Job</a>
+                    <a class="dropdown-item" href="{{ url_for('application_support.add_suite_job', app_id=app.id) }}"><i class="fas fa-code-branch"></i> Add Suite Job</a>
+                    <a class="dropdown-item" href="{{ url_for('application_support.upload_file', app_id=app.id) }}"><i class="fas fa-upload"></i> Upload File</a>
+                    <a class="dropdown-item" href="{{ url_for('application_support.add_task', app_id=app.id) }}"><i class="fas fa-tasks"></i> Add Task</a>
+                    <a class="dropdown-item" href="{{ url_for('application_support.add_critical_issue', app_id=app.id) }}"><i class="fas fa-triangle-exclamation"></i> Add Critical Issue</a>
+                    {% if is_admin_user %}
+                    <div class="dropdown-divider"></div>
+                    <form method="POST" action="{{ url_for('application_support.delete_application', app_id=app.id) }}" onsubmit="return confirm('Are you sure you want to delete this application?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="dropdown-item" style="color:var(--critical);"><i class="fas fa-trash"></i> Delete Application</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Overview -->
+<div class="tab-panel {{ 'active' if active_tab == 'overview' }}" data-panel="overview" data-tabgroup="detail">
+    <div class="col" style="gap:16px;">
+
+        <!-- Accessibility (top). The technology stack and standards
+             checklist live on their own Technical Details tab. -->
+        <div class="card">
+            <div class="card-head"><h3 class="card-title"><i class="fas fa-shield-alt"></i> Accessibility</h3></div>
+            <div class="card-body">
+                {% if app.accessibility %}
+                <p class="text-2" style="margin:0; line-height:1.6;">{{ app.accessibility|nl2br }}</p>
+                {% else %}
+                <p class="muted" style="margin:0;">No accessibility information provided.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <!-- Support Team. Two sources, one table: rows typed on this
+                 record, and rows the tower lead allocated on the Tower
+                 Summary grid. The Source column says which, because the
+                 second kind cannot be edited here - it changes when the
+                 allocation changes. -->
+            <div class="card">
+                <div class="card-head"><h3 class="card-title"><i class="fas fa-users"></i> Support Team</h3><span class="muted f-12">{{ support_team|length }} member{{ '' if support_team|length == 1 else 's' }}{% if assigned_team %} &middot; {{ assigned_team|length }} allocated{% endif %}</span></div>
+                <div class="card-body flush">
+                    {% if support_team %}
+                    {# Three columns, not four: this card sits in the narrow
+                       half of a two-up grid, and a Source column wrapped
+                       every cell onto two lines. The allocated rows carry a
+                       small grid mark beside the name instead. #}
+                    <table class="tbl">
+                        <thead><tr><th>Name</th><th>Role</th><th>Email</th></tr></thead>
+                        <tbody>
+                            {% for member in support_team %}
+                            <tr>
+                                <td class="fw-500">
+                                    {{ member.member_name }}
+                                    {% if member.source == assignment_source %}
+                                    <a href="{{ url_for('application_support.tower_summary', tower_id=app.tower_id) }}"
+                                       style="text-decoration:none; color:var(--brand);"
+                                       title="Allocated by the tower lead on the Tower Summary grid - change it there"
+                                       aria-label="Allocated on the Tower Summary grid"><i class="fas fa-table-cells f-12"></i></a>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge {{ 'badge-info' if member.role.value == 'Primary Owner' else 'badge-neutral' }}">{{ member.role.value or '-' }}</span></td>
+                                <td class="text-mono f-12 muted">{{ member.email or '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<div class="empty">No support team members defined</div>{% endif %}
+                </div>
+                {% if assigned_team %}
+                <div class="card-body" style="border-top:1px solid var(--border); padding-top:12px;">
+                    <div class="muted f-12">
+                        <i class="fas fa-table-cells"></i>
+                        marks the {{ assigned_team|length }} {{ 'entry' if assigned_team|length == 1 else 'entries' }}
+                        allocated by the tower lead on the <a href="{{ url_for('application_support.tower_summary', tower_id=app.tower_id) }}">Tower Summary</a>
+                        grid - Primary there means Primary Owner here. Change them on the grid; this page's
+                        Edit form only touches the entries typed on the record itself.
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Business Users -->
+            <div class="card">
+                <div class="card-head"><h3 class="card-title"><i class="fas fa-briefcase"></i> Business Users</h3><span class="muted f-12">{{ business_users|length }} stakeholder{{ '' if business_users|length == 1 else 's' }}</span></div>
+                <div class="card-body flush">
+                    {% if business_users %}
+                    <table class="tbl">
+                        <thead><tr><th>Name</th><th>Role</th><th>Email</th></tr></thead>
+                        <tbody>
+                            {% for bu in business_users %}
+                            <tr>
+                                <td class="fw-500">{{ bu.user_name }}</td>
+                                <td><span class="badge {{ 'badge-info' if bu.role.value == 'Owner' else 'badge-neutral' }}">{{ bu.role.value or '-' }}</span></td>
+                                <td class="text-mono f-12 muted">{{ bu.email or '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<div class="empty">No business users defined</div>{% endif %}
+                </div>
+            </div>
+
+            <!-- Vendor Details -->
+            <div class="card">
+                <div class="card-head"><h3 class="card-title"><i class="fas fa-building"></i> Vendor Details</h3><span class="muted f-12">{{ vendor_details|length }} vendor{{ '' if vendor_details|length == 1 else 's' }}</span></div>
+                <div class="card-body flush">
+                    {% if vendor_details %}
+                    <table class="tbl">
+                        <thead><tr><th>Vendor</th><th>Contact</th><th>Type</th></tr></thead>
+                        <tbody>
+                            {% for vendor in vendor_details %}
+                            <tr>
+                                <td class="fw-500">{{ vendor.vendor_name }}</td>
+                                <td class="text-mono f-12 muted">{{ vendor.email or '-' }}</td>
+                                <td>{% if vendor.is_bespoke %}<span class="badge badge-info">Bespoke</span>{% else %}<span class="badge badge-neutral">External</span>{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<div class="empty">No vendors defined</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- External Interfaces -->
+        <div class="card">
+            <div class="card-head"><h3 class="card-title"><i class="fas fa-link"></i> External Interfaces</h3><span class="muted f-12">{{ external_interfaces|length }} integration{{ '' if external_interfaces|length == 1 else 's' }}</span></div>
+            <div class="card-body flush">
+                {% if external_interfaces %}
+                <table class="tbl">
+                    <thead><tr><th>Interface</th><th>Direction</th><th>Connectivity</th><th>External Server</th><th>Description</th><th>Contact</th></tr></thead>
+                    <tbody>
+                        {% for interface in external_interfaces %}
+                        {% set dir = interface.flow_direction.value %}
+                        <tr>
+                            <td class="fw-600">{{ interface.interface_name }}</td>
+                            <td><span class="badge {{ 'badge-success' if dir == 'Inbound' else 'badge-info' if dir == 'Outbound' else 'badge-warning' }}">{{ dir }}</span></td>
+                            <td><span class="badge badge-neutral text-mono">{{ interface.connectivity_type or '-' }}</span></td>
+                            <td class="text-mono f-12">{{ interface.external_server or '-' }}</td>
+                            <td class="muted">{{ interface.description or '-' }}</td>
+                            <td class="text-mono f-12 muted">{{ interface.contact or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="empty">No external interfaces defined</div>{% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Quality -->
+<div class="tab-panel {{ 'active' if active_tab == 'quality' }}" data-panel="quality" data-tabgroup="detail">
+    <div class="col" style="gap:16px;">
+
+        <!-- Headline -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-clipboard-check"></i> Documentation Quality</h3>
+                <span class="muted f-12">{{ app_quality.complete }} of {{ app_quality.total_checks }} sections complete</span>
+            </div>
+            <div class="card-body">
+                <div class="row wrap" style="gap:22px; align-items:flex-start;">
+                    {{ q_ring(app_quality, 'Record quality') }}
+                    <div class="flex-1" style="min-width:260px;">
+                        <div class="row wrap gap-2 mb-3">
+                            <span class="badge {{ app_quality.badge }}">{{ app_quality.grade }}</span>
+                            <span class="badge {{ 'badge-success' if app_quality.meets_target else 'badge-warning' }}">
+                                <i class="fas {{ 'fa-circle-check' if app_quality.meets_target else 'fa-triangle-exclamation' }} f-12"></i>
+                                {{ 'Meets' if app_quality.meets_target else 'Below' }} the {{ app_quality.target }}% target for {{ app_quality.criticality or 'this record' }}
+                            </span>
+                        </div>
+                        {{ q_bar(app_quality, app_quality.target, thick=true) }}
+                        <p class="muted f-12 mt-3" style="margin-bottom:0; line-height:1.6;">
+                            Scored across the {{ app_quality.total_checks }} sections every application is expected to carry.
+                            Jobs, external interfaces, tasks, critical issues and files depend on what the application is, so they
+                            are shown below as coverage and are <strong>not</strong> counted in this score.
+                            The pass mark rises with business criticality.
+                        </p>
+                    </div>
+                    <div class="grid-3" style="gap:10px; min-width:230px;">
+                        <div class="metric" style="padding:12px 14px;">
+                            <div class="metric-label">Complete</div>
+                            <div class="metric-value" style="font-size:20px; color:var(--success);">{{ app_quality.complete }}</div>
+                        </div>
+                        <div class="metric" style="padding:12px 14px;">
+                            <div class="metric-label">Partial</div>
+                            <div class="metric-value" style="font-size:20px; color:oklch(0.50 0.13 65);">{{ app_quality.partial }}</div>
+                        </div>
+                        <div class="metric" style="padding:12px 14px;">
+                            <div class="metric-label">Missing</div>
+                            <div class="metric-value" style="font-size:20px; color:var(--critical);">{{ app_quality.missing }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- What is outstanding -->
+        {% if app_quality.gaps and can_edit %}
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-list-check"></i> Outstanding Actions</h3>
+                <span class="muted f-12">{{ app_quality.gaps|length }} to complete</span>
+            </div>
+            <div class="card-body">
+                <ol style="margin:0; padding-left:20px;">
+                    {% for gap in app_quality.gaps %}
+                    <li style="font-size:13px; color:var(--text-2); line-height:1.6; margin-bottom:6px;">{{ gap }}</li>
+                    {% endfor %}
+                </ol>
+                <div class="row wrap mt-4" style="gap:8px;">
+                    <a class="btn btn-sm btn-primary" href="{{ url_for('application_support.edit_application', app_id=app.id) }}"><i class="fas fa-pen"></i> Edit Application</a>
+                    <a class="btn btn-sm" href="{{ url_for('application_support.edit_technical_details', app_id=app.id) }}"><i class="fas fa-microchip"></i> Edit Technical Details</a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Section by section -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-table-list"></i> Scored Sections</h3>
+                <span class="muted f-12">weighted to 100 points</span>
+            </div>
+            <div class="card-body">
+                {{ q_checks(app_quality) }}
+            </div>
+        </div>
+
+        <!-- Optional coverage -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-circle-info"></i> Optional Sections</h3>
+                <span class="muted f-12">recorded for reference, not scored</span>
+            </div>
+            <div class="card-body">
+                {{ q_optional(app_quality) }}
+                <p class="muted f-12 mt-3" style="margin-bottom:0;">
+                    These depend on what the application actually is - a system with no batch jobs is not an incomplete record.
+                    They are never counted against the score.
+                </p>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Infrastructure -->
+<div class="tab-panel {{ 'active' if active_tab == 'infrastructure' }}" data-panel="infrastructure" data-tabgroup="detail">
+    <div class="col" style="gap:16px;">
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-server"></i> Server Infrastructure</h3>
+                <span class="muted f-12">{{ server_details|length }} node{{ '' if server_details|length == 1 else 's' }}</span>
+            </div>
+            <div class="card-body flush">
+                {% if server_details %}
+                <table class="tbl">
+                    <thead><tr><th>Hostname</th><th>Location</th><th>OS</th><th>Environment</th></tr></thead>
+                    <tbody>
+                        {% for server in server_details %}
+                        <tr>
+                            <td class="text-mono f-12">{{ server.server_name }}</td>
+                            <td>{{ server.location or '-' }}</td>
+                            <td><span class="badge badge-neutral">{{ server.operating_system or '-' }}</span></td>
+                            <td class="muted">{{ server.environment_description or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="empty">No server details defined</div>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Technical Details -->
+<div class="tab-panel {{ 'active' if active_tab == 'technical' }}" data-panel="technical" data-tabgroup="detail">
+    <div class="col" style="gap:16px;">
+
+        {% if can_edit %}
+        <div class="row" style="justify-content:flex-end;">
+            <a class="btn btn-sm btn-primary" href="{{ url_for('application_support.edit_technical_details', app_id=app.id) }}"><i class="fas fa-pen"></i> Edit Technical Details</a>
+        </div>
+        {% endif %}
+
+        <!-- Stack -->
+        {% for category in ['os', 'database'] %}
+        {% set meta = category_meta[category] %}
+        {% set rows = tech_stack.get(category, []) %}
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas {{ meta[2] }}"></i> {{ meta[1] }}</h3>
+                <span class="muted f-12">{{ rows|length }} entr{{ 'y' if rows|length == 1 else 'ies' }}</span>
+            </div>
+            <div class="card-body flush">
+                {% if rows %}
+                <table class="tbl">
+                    <thead><tr><th style="width:28%;">{{ meta[0] }}</th><th style="width:18%;">Version</th><th>Description</th></tr></thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td class="fw-600">{{ row.item_name }}</td>
+                            <td class="text-mono f-12">{{ row.version or '-' }}</td>
+                            <td class="muted">{{ row.description or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="empty">No {{ meta[1]|lower }} recorded</div>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Application: tools and languages -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-cubes"></i> Application</h3>
+                <span class="muted f-12">{{ tech_stack.get('tool', [])|length }} tool{{ '' if tech_stack.get('tool', [])|length == 1 else 's' }} &middot; {{ tech_stack.get('language', [])|length }} language{{ '' if tech_stack.get('language', [])|length == 1 else 's' }}</span>
+            </div>
+            <div class="card-body flush">
+                {% for category in ['tool', 'language'] %}
+                {% set meta = category_meta[category] %}
+                {% set rows = tech_stack.get(category, []) %}
+                <div class="sub-head"><i class="fas {{ meta[2] }}"></i> {{ meta[1] }}</div>
+                {% if rows %}
+                <table class="tbl">
+                    <thead><tr><th style="width:28%;">{{ meta[0] }}</th><th style="width:18%;">Version</th><th>Description</th></tr></thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td class="fw-600">{{ row.item_name }}</td>
+                            <td class="text-mono f-12">{{ row.version or '-' }}</td>
+                            <td class="muted">{{ row.description or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="empty">No {{ meta[1]|lower }} recorded</div>{% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Standard practices -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-clipboard-check"></i> Application Standard Practices</h3>
+                <div class="row gap-2">
+                    <span class="muted f-12">{{ std_summary.answered }} of {{ std_summary.total }} assessed</span>
+                    {% if std_sections %}
+                    {# Sections start collapsed; this pair opens or closes them all at once. #}
+                    <button type="button" class="btn btn-sm" onclick="setAllStdSections(false)"><i class="fas fa-angles-down"></i> Expand all</button>
+                    <button type="button" class="btn btn-sm" onclick="setAllStdSections(true)"><i class="fas fa-angles-up"></i> Collapse all</button>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                {% if std_summary.total %}
+                <div class="grid-4 mb-4">
+                    <div class="metric">
+                        <div class="metric-label">Compliance</div>
+                        <div class="metric-value">{{ std_summary.percent }}%</div>
+                        <div class="metric-delta">{{ std_summary.met }} of {{ std_summary.answered }} assessed control{{ '' if std_summary.answered == 1 else 's' }} met</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Non Compliant</div>
+                        <div class="metric-value" style="color:var(--critical);">{{ std_summary.counts['Non Compliant'] }}</div>
+                        <div class="metric-delta">Open gaps</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">In Progress</div>
+                        <div class="metric-value">{{ std_summary.counts['In Progress'] }}</div>
+                        <div class="metric-delta">{{ std_summary.counts['Not Started'] }} not started</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Not Assessed</div>
+                        <div class="metric-value">{{ std_summary.unanswered }}</div>
+                        <div class="metric-delta">No status recorded</div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% for section in std_sections %}
+                {# Collapsed by default: an application with a broad stack can carry a
+                   dozen sections, and the summary line above already carries the score. #}
+                <div class="std-section is-collapsed" data-std-section>
+                    <button type="button" class="std-section-head" aria-expanded="false"
+                            aria-controls="std-body-{{ loop.index }}" onclick="toggleStdSection(this)">
+                        <span class="row gap-2">
+                            <i class="fas {{ section.icon }} muted"></i>
+                            <span class="fw-600">{{ section.title }}</span>
+                            <span class="badge badge-neutral">{{ section.subtitle }}</span>
+                        </span>
+                        <span class="row gap-2">
+                            <span class="muted f-12">{{ section.summary.answered }}/{{ section['items']|length }} assessed{% if section.summary.answered %} &middot; {{ section.summary.percent }}% met{% endif %}</span>
+                            <span class="std-section-toggle" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                        </span>
+                    </button>
+                    <div class="std-section-body" id="std-body-{{ loop.index }}">
+                    <table class="tbl">
+                        <thead><tr><th style="width:30%;">Practice</th><th style="width:15%;">Status</th><th style="width:16%;">Target Dates</th><th>Comment</th></tr></thead>
+                        <tbody>
+                            {% for row in section['items'] %}
+                            {% set entry = row.entry %}
+                            <tr>
+                                <td>
+                                    <div class="fw-600">{{ row.item.name }}</div>
+                                    {% if row.item.description %}<div class="muted f-12 mt-2" style="line-height:1.5;">{{ row.item.description }}</div>{% endif %}
+                                </td>
+                                <td>
+                                    {% if entry %}<span class="badge {{ status_badge.get(entry.status, 'badge-neutral') }}">{{ entry.status }}</span>
+                                    {% else %}<span class="badge badge-neutral">Not assessed</span>{% endif %}
+                                </td>
+                                <td class="text-mono f-12 muted">
+                                    {% if entry and (entry.start_date or entry.end_date) %}
+                                    {{ entry.start_date.strftime('%Y-%m-%d') if entry.start_date else '-' }}<br>{{ entry.end_date.strftime('%Y-%m-%d') if entry.end_date else '-' }}
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td class="muted">{{ entry.comment if entry and entry.comment else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty">
+                    <div class="empty-icon"><i class="fas fa-clipboard-check"></i></div>
+                    No standards checklist to show yet. Record an operating system, database, tool or programming language first &mdash; the General section and each technology's own checklist appear here once the stack is set.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Jobs -->
+<div class="tab-panel {{ 'active' if active_tab == 'jobs' }}" data-panel="jobs" data-tabgroup="detail">
+    <div class="col" style="gap:16px;">
+        <!-- Individual Jobs -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-play"></i> Individual Jobs</h3>
+                {% if can_edit %}<a class="btn btn-sm" href="{{ url_for('application_support.add_individual_job', app_id=app.id) }}"><i class="fas fa-plus"></i> Add Individual Job</a>{% endif %}
+            </div>
+            <div class="card-body flush">
+                {% if individual_jobs %}
+                <table class="tbl">
+                    <thead><tr><th>Job</th><th>Frequency</th><th>Description</th><th>User Profile</th><th class="actions-cell">Actions</th></tr></thead>
+                    <tbody>
+                        {% for job in individual_jobs %}
+                        <tr>
+                            <td class="fw-600">{{ job.job_name }}</td>
+                            <td>{% if job.frequency %}<span class="badge badge-info">{{ job.frequency }}</span>{% else %}-{% endif %}</td>
+                            <td class="muted">{{ job.short_description or '-' }}</td>
+                            <td class="text-mono f-12">{{ job.user_profile or '-' }}</td>
+                            <td class="actions-cell">
+                                <button class="btn btn-sm" data-job-toggle="ind-{{ job.id }}"><span data-toggle-label>Details</span> <i class="fas fa-chevron-down f-12"></i></button>
+                                <a class="btn btn-sm btn-icon" href="{{ url_for('application_support.view_individual_job', job_id=job.id) }}" title="View"><i class="fas fa-eye"></i></a>
+                                {% if can_edit %}<a class="btn btn-sm btn-icon" href="{{ url_for('application_support.edit_individual_job', job_id=job.id) }}" title="Edit"><i class="fas fa-pencil"></i></a>{% endif %}
+                                {% if is_admin_user %}
+                                <form method="POST" action="{{ url_for('application_support.delete_individual_job', job_id=job.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this job?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-icon btn-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr class="job-detail-row" data-job-row="ind-{{ job.id }}">
+                            <td colspan="5" style="padding:0;">
+                                <div class="collapse-row"><div class="collapse-grid">
+                                    <div>
+                                        <h6>Full Description</h6><p>{{ job.full_description or '—' }}</p>
+                                        <h6>Prerequisites</h6><p>{{ job.prerequisites or '—' }}</p>
+                                        <h6>Script</h6><pre>{{ job.script or '—' }}</pre>
+                                    </div>
+                                    <div>
+                                        <h6>Failure Checks</h6><p>{{ job.failure_checks or '—' }}</p>
+                                        <h6>Manual Execution Steps</h6><p style="white-space:pre-line;">{{ job.manual_execution_steps or '—' }}</p>
+                                    </div>
+                                </div></div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="empty">No individual jobs defined</div>{% endif %}
+            </div>
+        </div>
+
+        <!-- Suite Jobs -->
+        <div class="card">
+            <div class="card-head">
+                <h3 class="card-title"><i class="fas fa-code-branch"></i> Suite Jobs</h3>
+                {% if can_edit %}<a class="btn btn-sm" href="{{ url_for('application_support.add_suite_job', app_id=app.id) }}"><i class="fas fa-plus"></i> Add Suite Job</a>{% endif %}
+            </div>
+            <div class="card-body flush">
+                {% if suite_jobs %}
+                <table class="tbl">
+                    <thead><tr><th>Suite</th><th>Job</th><th>Frequency</th><th>Description</th><th>User Profile</th><th class="actions-cell">Actions</th></tr></thead>
+                    <tbody>
+                        {% for job in suite_jobs %}
+                        <tr>
+                            <td class="fw-600">{{ job.suite_name }}</td>
+                            <td>{{ job.job_name }}</td>
+                            <td>{% if job.frequency %}<span class="badge badge-info">{{ job.frequency }}</span>{% else %}-{% endif %}</td>
+                            <td class="muted">{{ job.short_description or '-' }}</td>
+                            <td class="text-mono f-12">{{ job.user_profile or '-' }}</td>
+                            <td class="actions-cell">
+                                <button class="btn btn-sm" data-job-toggle="suite-{{ job.id }}"><span data-toggle-label>Details</span> <i class="fas fa-chevron-down f-12"></i></button>
+                                <a class="btn btn-sm btn-icon" href="{{ url_for('application_support.view_suite_job', job_id=job.id) }}" title="View"><i class="fas fa-eye"></i></a>
+                                {% if can_edit %}<a class="btn btn-sm btn-icon" href="{{ url_for('application_support.edit_suite_job', job_id=job.id) }}" title="Edit"><i class="fas fa-pencil"></i></a>{% endif %}
+                                {% if is_admin_user %}
+                                <form method="POST" action="{{ url_for('application_support.delete_suite_job', job_id=job.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this job?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-icon btn-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr class="job-detail-row" data-job-row="suite-{{ job.id }}">
+                            <td colspan="6" style="padding:0;">
+                                <div class="collapse-row"><div class="collapse-grid">
+                                    <div>
+                                        <h6>Full Description</h6><p>{{ job.full_description or '—' }}</p>
+                                        <h6>Prerequisites</h6><p>{{ job.prerequisites or '—' }}</p>
+                                        <h6>Script</h6><pre>{{ job.script or '—' }}</pre>
+                                    </div>
+                                    <div>
+                                        <h6>Failure Checks</h6><p>{{ job.failure_checks or '—' }}</p>
+                                        <h6>Manual Execution Steps</h6><p style="white-space:pre-line;">{{ job.manual_execution_steps or '—' }}</p>
+                                    </div>
+                                </div></div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="empty">No suite jobs defined</div>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Files -->
+<div class="tab-panel {{ 'active' if active_tab == 'files' }}" data-panel="files" data-tabgroup="detail">
+    <div class="card">
+        <div class="card-head">
+            <h3 class="card-title"><i class="fas fa-file"></i> File &amp; Inventory Management</h3>
+            {% if can_edit %}<a class="btn btn-sm" href="{{ url_for('application_support.upload_file', app_id=app.id) }}"><i class="fas fa-upload"></i> Upload File</a>{% endif %}
+        </div>
+        <div class="card-body flush">
+            {% if file_inventory %}
+            <table class="tbl">
+                <thead><tr><th>File</th><th>Description</th><th>Uploaded By</th><th>Date</th><th class="actions-cell">Actions</th></tr></thead>
+                <tbody>
+                    {% for file in file_inventory %}
+                    <tr>
+                        <td><span class="row gap-2"><i class="fas fa-file-lines muted"></i> <span class="fw-600">{{ file.file_name }}</span>
+                            {% set vcount = file_version_counts.get(file.id, 0) %}
+                            {% if vcount > 1 %}<span class="badge badge-neutral" title="{{ vcount }} versions kept">v{{ vcount }}</span>{% endif %}
+                        </span></td>
+                        <td class="muted">{{ file.description or '-' }}</td>
+                        <td>{{ get_user_name(file.uploaded_by) }}</td>
+                        <td class="muted text-mono f-12">{{ file.uploaded_at.strftime('%Y-%m-%d %H:%M') if file.uploaded_at else 'Unknown' }}</td>
+                        <td class="actions-cell">
+                            <a class="btn btn-sm" href="{{ url_for('application_support.download_file', file_id=file.id) }}" title="Download"><i class="fas fa-download"></i> Download</a>
+                            {% if can_edit %}
+                            <a class="btn btn-sm" href="{{ url_for('application_support.edit_file', file_id=file.id) }}" title="Edit details / upload a new version"><i class="fas fa-pen"></i> Edit</a>
+                            {% endif %}
+                            {% if is_admin_user %}
+                            <form method="POST" action="{{ url_for('application_support.delete_file', file_id=file.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this file?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-icon btn-danger" title="Delete file"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}<div class="empty"><div class="empty-icon"><i class="fas fa-file"></i></div>No files uploaded</div>{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Tasks -->
+<div class="tab-panel {{ 'active' if active_tab == 'tasks' }}" data-panel="tasks" data-tabgroup="detail">
+    <div class="card">
+        <div class="card-head">
+            <h3 class="card-title"><i class="fas fa-tasks"></i> Task List</h3>
+            {% if can_edit %}<a class="btn btn-sm" href="{{ url_for('application_support.add_task', app_id=app.id) }}"><i class="fas fa-plus"></i> Add Task</a>{% endif %}
+        </div>
+        <div class="card-body">
+            {% if tasks %}
+            {% for task in tasks %}
+            <div class="item-card">
+                <div class="item-head">
+                    <div>
+                        <div class="item-title">{{ task.task_name or 'Untitled task' }}</div>
+                        <div class="item-desc">{{ task.description or 'No description.' }}</div>
+                    </div>
+                    <a class="btn btn-sm" href="{{ url_for('application_support.view_task', task_id=task.id) }}">View Details <i class="fas fa-arrow-right f-12"></i></a>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}<div class="empty">No tasks defined</div>{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Critical Issues -->
+<div class="tab-panel {{ 'active' if active_tab == 'issues' }}" data-panel="issues" data-tabgroup="detail">
+    <div class="card">
+        <div class="card-head">
+            <h3 class="card-title"><i class="fas fa-triangle-exclamation"></i> Critical Issues</h3>
+            {% if can_edit %}<a class="btn btn-sm btn-primary" href="{{ url_for('application_support.add_critical_issue', app_id=app.id) }}"><i class="fas fa-plus"></i> Report Critical Issue</a>{% endif %}
+        </div>
+        <div class="card-body">
+            {% if critical_issues %}
+            {% for issue in critical_issues %}
+            <div class="item-card critical">
+                <div class="item-head">
+                    <div>
+                        <div class="row" style="gap:8px;">
+                            <span class="badge badge-critical"><i class="fas fa-triangle-exclamation f-12"></i> Critical</span>
+                            <div class="item-title">{{ issue.issue_name or 'Untitled issue' }}</div>
+                        </div>
+                        <div class="item-desc mt-2">{{ issue.problem_description or 'No description.' }}</div>
+                    </div>
+                    <a class="btn btn-sm" href="{{ url_for('application_support.view_issue', issue_id=issue.id) }}">View Details <i class="fas fa-arrow-right f-12"></i></a>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}<div class="empty">No critical issues reported</div>{% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+// Score chip in the hero jumps to the Quality tab. Clicking the real tab
+// button keeps the tab bar highlight correct - there is one tab controller.
+function showDetailTab(name) {
+    var tab = document.querySelector('.tab[data-tab="' + name + '"][data-tabgroup="detail"]');
+    if (tab) { tab.click(); }
+}
+
+// ---------------------------------------------------------------------------
+// Keep the address bar and the breadcrumb tail in step with the open section.
+//
+// appsupport.js owns the tab switching itself and writes a location hash. This
+// listener is registered later, so it runs after that one for the same click
+// and replaces the hash with `?tab=`, which the server can actually read - it
+// is what renders the right section active on load and makes each section a
+// link you can send someone.
+//
+// replaceState, not pushState: moving between the sections of one application
+// is not a navigation, and stacking it into history would make Back walk the
+// tabs instead of leaving the application - exactly the surprise this layout
+// is removing.
+// ---------------------------------------------------------------------------
+(function () {
+    var strip = document.getElementById('appDetailTabs');
+    if (!strip) { return; }
+    var crumb = document.getElementById('asCrumbTab');
+
+    // A section opened from a URL must not arrive with its own tab sitting
+    // under the fade at the right edge of a scrolled strip. Scroll the minimum
+    // that reveals it, and do it again after load: webfonts and the count
+    // badges settle late, and a position computed before that is already wrong
+    // by the time anyone sees it.
+    function revealActive() {
+        var active = strip.querySelector('.tab.active');
+        if (!active) { return; }
+        var a = active.getBoundingClientRect(), s = strip.getBoundingClientRect();
+        if (a.right > s.right - 12) {
+            strip.scrollLeft += (a.right - s.right) + 12;
+        } else if (a.left < s.left) {
+            strip.scrollLeft -= (s.left - a.left);
+        }
+    }
+    // The fade at the right edge means "there is more this way", so it may
+    // only show when there IS more. CSS cannot ask whether a box overflows.
+    function syncFade() {
+        strip.classList.toggle('is-scrollable',
+                               strip.scrollWidth > strip.clientWidth + 1);
+    }
+
+    function sync() { syncFade(); revealActive(); }
+
+    sync();
+    window.addEventListener('load', sync);
+    window.addEventListener('resize', sync);
+
+    document.addEventListener('click', function (event) {
+        var tab = event.target.closest('.tab[data-tabgroup="detail"]');
+        if (!tab) { return; }
+        var url = new URL(location.href);
+        url.searchParams.set('tab', tab.getAttribute('data-tab'));
+        url.hash = '';
+        history.replaceState(null, '', url);
+        // data-crumb carries the clean label - the button's own text also
+        // holds an icon and a count badge.
+        if (crumb) { crumb.textContent = tab.getAttribute('data-crumb') || tab.textContent.trim(); }
+        var hero = document.getElementById('appDetailHero');
+        if (hero) { hero.classList.toggle('is-compact', tab.getAttribute('data-tab') !== 'overview'); }
+
+        // The strip is pinned (sup_tools.css), so a switch can happen from deep
+        // inside a long section. Bring the new section's top up to just under
+        // the strip - but only when the reader has already scrolled past it;
+        // from the top of the page the summary stays where it is.
+        var panel = document.querySelector('.tab-panel[data-tabgroup="detail"][data-panel="' + tab.getAttribute('data-tab') + '"]');
+        if (panel && panel.getBoundingClientRect().top < strip.getBoundingClientRect().bottom) {
+            panel.scrollIntoView({ block: 'start' });
+        }
+    });
+})();
+
+// Standard practices sections. Every section renders collapsed; clicking its
+// header opens it. Purely client-side - the rows are already in the DOM, so
+// print and browser find-in-page still need the section opened first.
+function toggleStdSection(btn) {
+    var section = btn.closest('[data-std-section]');
+    if (!section) { return; }
+    var collapsed = section.classList.toggle('is-collapsed');
+    btn.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function setAllStdSections(collapsed) {
+    var sections = document.querySelectorAll('[data-std-section]');
+    for (var i = 0; i < sections.length; i++) {
+        sections[i].classList.toggle('is-collapsed', collapsed);
+        var head = sections[i].querySelector('.std-section-head');
+        if (head) { head.setAttribute('aria-expanded', String(!collapsed)); }
+    }
+}
+</script>
+{% endblock %}

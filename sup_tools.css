@@ -1,0 +1,1794 @@
+/*
+   NPG App Assist - Support & Tools specifics
+   ------------------------------------------
+   Loaded by all three layouts: application_support, utility and
+   software_inventory.
+
+   The shared module material lives in npg_module.css. This file carries only
+   what these modules genuinely own - Application Support's quality scoring
+   bands and the architecture canvas, and the surfaces Utility needs because
+   it does not load the shared Astra stylesheet.
+*/
+
+/* The module bar already names the module, so a page eyebrow repeating it is
+   suppressed. The h1 stays as the page's real title. */
+.npg-ui:is(.appsup-body, .util-body, .sw-body) :is(.page-strip-eyebrow, .as-eyebrow) { display: none; }
+
+/* Status and score marks read as one family across all three. Colours are
+   unchanged; only the material is. */
+.npg-ui:is(.appsup-body, .util-body, .sw-body) :is(.st-pill, .badge, .pill, .chip, .tag) {
+  box-shadow: inset 0 0 0 1px rgba(20, 22, 28, .05);
+  font-weight: 550;
+}
+
+/* Application Support and Utility load their own stylesheets rather than the
+   shared Astra one, so their surfaces are set explicitly to match. */
+.npg-ui:is(.appsup-body, .util-body) :is(.card, .panel, .as-card, .util-card) {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #fcfcfd);
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 1px 2px rgba(20, 22, 28, .05),
+    0 5px 14px rgba(20, 22, 28, .035);
+}
+
+/* Documentation quality bands keep their meaning, carried by a tinted
+   hairline on all four sides rather than a stripe down one edge. */
+.npg-ui.appsup-body :is(.quality-row, .score-row, .as-row) {
+  --tone: var(--ink-3);
+  border: 1px solid color-mix(in srgb, var(--tone) 24%, var(--line)) !important;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #fcfcfd);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(20, 22, 28, .04);
+}
+.npg-ui.appsup-body :is(.quality-row, .score-row, .as-row).good { --tone: var(--ok); }
+.npg-ui.appsup-body :is(.quality-row, .score-row, .as-row).fair { --tone: var(--warn); }
+.npg-ui.appsup-body :is(.quality-row, .score-row, .as-row).poor { --tone: var(--stop); }
+.npg-ui.appsup-body :is(.quality-row, .score-row, .as-row) > .stripe { display: none; }
+
+/* Score bars: a lit track with a fill that has its own highlight, matching
+   the utilisation bars in Workforce and the progress bars in Monitoring. */
+.npg-ui:is(.appsup-body, .util-body) :is(.bar, .progress, .score-bar) {
+  background: linear-gradient(180deg, #e9edf3, #eef2f6);
+  box-shadow: inset 0 1px 2px rgba(20, 22, 28, .10);
+  border-radius: 6px; overflow: hidden;
+}
+.npg-ui:is(.appsup-body, .util-body) :is(.bar, .progress, .score-bar) > * {
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+
+/*
+   The architecture canvas draws its own fixed-geometry world (arch_kit.js
+   asserts against the template's constants), so it is left entirely alone -
+   only the frame around it is a card.
+
+   `.arch-stage` USED to be listed here and forced to flat white. That was
+   wrong once the diagram's own cards became white lit surfaces: a white card
+   on a white ground has nothing to sit on, and the whole world read as one
+   flat sheet. The stage now gets its slate ground from arch_premium.css,
+   which the two diagram pages load and which scopes one class deeper than
+   this file so it wins. The two legacy selectors stay - they belong to older
+   canvases that are still flat white by design.
+*/
+.npg-ui.appsup-body :is(#archCanvas, .arch-canvas) {
+  background: #ffffff;
+  box-shadow: none;
+}
+
+/* Selected state for the module bar's menu and icon actions. */
+/* Selected state for the module bar's icon and menu actions. All three of
+   these modules are themed now, so a selected action reads in the module's own
+   hue rather than in the brand. */
+.npg-ui:is(.appsup-body, .util-body, .sw-body) :is(.npg-icon-btn, .npg-btn).is-on {
+  border-color: color-mix(in srgb, var(--mod) 30%, var(--line));
+  background: linear-gradient(180deg, #ffffff, var(--mod-tint));
+  color: var(--mod-ink);
+}
+
+/* Data-quality figures carried their band as a 3px stripe down one edge. The
+   band is now a tinted hairline on all four sides plus a corner light, using
+   the module's own --q-tone so the meanings are unchanged. */
+.npg-ui.appsup-body .metric[class*="q-tone-"] {
+  position: relative; isolation: isolate; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--q-tone) 26%, var(--line)) !important;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #fcfcfd);
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 1px 2px rgba(20, 22, 28, .05),
+    0 5px 14px rgba(20, 22, 28, .035);
+}
+.npg-ui.appsup-body .metric[class*="q-tone-"]::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: radial-gradient(200px circle at -3% -20%,
+              color-mix(in srgb, var(--q-tone) 9%, transparent), transparent 62%);
+}
+
+/* ========================================================================== *
+   APPLICATION SUPPORT — PREMIUM KNOWLEDGE WORKSPACE
+
+   Application Support has a distinct job: connect technical facts, people
+   and operational readiness. Its material therefore combines the NPG brand
+   with an emerald "connected / ready" accent. These rules are intentionally
+   scoped to this module and loaded last, so all of its submodules — portfolio,
+   records, quality, architecture and administration — feel like one product.
+ * ========================================================================== */
+
+/* ===========================================================================
+   MODULE ACCENT - Software Inventory violet
+
+   Both values come from this module's own hero: --mod is --hero-core-1 and
+   --mod-ink is --hero-core-2.
+
+     --mod       #6d5cd6   fills, icon tiles, the module bar rule. 5.1:1 on
+                           white.
+     --mod-ink   #3a2d8c   read: card-title icons, the active section label,
+                           the headline figure. 12.0:1 on white.
+     --mod-tint  #f0eefb   wells and chips. 243 average luminance.
+
+   KNOWN COLLISION, ACCEPTED. This violet sits 7/255 from Project Management's
+   #6f5fd8 - the closest pair in the whole module set, and close enough that
+   the two fills are the same colour to the eye. It was raised before this
+   module was themed and the decision was to keep both modules on their own
+   published heroes rather than re-space the thirteen hues.
+
+   One thing takes the edge off it in practice: the INKS are 82/255 apart
+   (#3a2d8c here against Project Management's #5341b1), so labels, active
+   section names and headline figures do read differently between the two
+   modules even though the icon fills do not. That was not designed; it is
+   worth knowing before anyone "tidies" either ink toward the other.
+
+   The two are also in different rail groups - Support & Tools against
+   Delivery - so they never appear on the same screen.
+   =========================================================================== */
+
+.npg-ui.sw-body {
+  --mod:      #6d5cd6;
+  --mod-ink:  #3a2d8c;
+  --mod-tint: #f0eefb;
+}
+
+/* ===========================================================================
+   MODULE ACCENT - Utility Tools: the brand IS the hue
+
+   This module is the exception in the set, and deliberately so. Its published
+   identity in _modules.html is `var(--brand)` - not a hue of its own, the NPG
+   burgundy itself - and its hero in npg_hero.css leans into that, boosting
+   --hero-brand-glow to .30 where every other module leaves it at .26.
+
+   Utility Tools is the house toolbox: the small jobs that belong to no
+   particular domain. Giving it a domain colour would be inventing an identity
+   it does not have.
+
+   The two alternatives were measured and both rejected:
+
+     hero --hero-core-1 #b8315b   81/255 from the brand burgundy, but only
+                                  56/255 from the --stop status red. A third
+                                  red on a page that already carries two, none
+                                  of them clearly apart. Rejected.
+
+     inline oklch(0.55 0.12 330)  = #985593, a magenta. Genuinely distinct
+                                  (179 from the brand), but it disagrees with
+                                  both the hero above it and the registry, and
+                                  would clash with the crimson hero on the
+                                  same screen. Rejected, and removed from the
+                                  template.
+
+   So this module adopts the accent layer and its hue resolves to the brand.
+   That is what the accent layer's own fallback already does, and the tokens
+   are restated here only so a reader does not think they were forgotten.
+
+   The consequence is worth stating: on this one module the "chrome is the
+   product, the workspace is the module" split collapses, because the two are
+   the same colour. That is correct for the house toolbox.
+
+   QUIET, and this is why. Tinting surfaces in the brand means tinting them in
+   a RED, and pale red on a large surface already means something in this
+   application. Measured: a brand-tinted card head lands at #f3eff3, which is
+   17/255 from --stop-tint (#fdeeed) - close enough that a card header and an
+   error surface would be the same colour, separated only by what happens to
+   be written on them.
+
+   So the hue stays in the marks, which on this module is where the burgundy
+   already lived: the module bar, the icon tiles, the active tool. Surfaces
+   stay neutral, and pale red keeps meaning exactly one thing.
+   =========================================================================== */
+
+.npg-ui.util-body {
+  --mod:      var(--npg);
+  --mod-ink:  var(--npg-ink);
+  --mod-tint: var(--npg-tint);
+}
+
+/* ===========================================================================
+   MODULE ACCENT - Application Support emerald, QUIET variant
+
+   This module got here first. It had a complete per-module colour system of
+   its own - --support / --support-deep / --support-soft - before the shared
+   accent layer existed, and the three roles map onto the shared tokens one
+   for one. So the values do not change; the NAMES do, and --support* becomes
+   an alias. One definition, and a future change to this module's hue happens
+   in one place rather than two.
+
+     --mod       #187765   fills, icons, the module bar. 5.4:1 on white.
+     --mod-ink   #0d5146   read: labels, active section, figures. 9.2:1.
+     --mod-tint  #eaf7f3   wells and chips. 241 average luminance.
+
+   QUIET, and the measurement is the reason. This module grades every
+   application record and shows the result as six bands - Excellent, Very
+   Good, Good, Average, Poor, Critical - of which TWO are green, alongside
+   green/red coverage bars and good/fair/poor row hairlines. Its own hue is an
+   emerald 37/255 from the --ok green those bands use.
+
+   A module that grades things in colour cannot also wash its surfaces in one
+   of the grading colours. The hue therefore stays in marks, and the surfaces
+   stay neutral - which is what this module was already doing for its cards;
+   the quiet variant simply stops the shared layer from adding more.
+
+   Its own canvas and module bar treatments below are richer than the shared
+   ones and load later, so they continue to win. That is deliberate.
+   =========================================================================== */
+
+.npg-ui.appsup-body {
+  --mod:      #187765;
+  --mod-ink:  #0d5146;
+  --mod-tint: #eaf7f3;
+
+  /* Aliases. Every existing rule in this file reads these names. */
+  --support:      var(--mod);
+  --support-deep: var(--mod-ink);
+  --support-soft: var(--mod-tint);
+  --support-line: #bfe0d6;
+  --support-shadow-rest: inset 0 1px 0 rgba(255,255,255,.96), 0 1px 2px rgba(20,22,28,.055), 0 8px 24px rgba(20,22,28,.055);
+  --support-shadow-lift: inset 0 1px 0 #fff, 0 3px 7px rgba(20,22,28,.065), 0 19px 42px rgba(20,22,28,.12);
+}
+
+/* The module's own canvas. The green corner light is kept - it is better
+   tuned to this module than the shared one - but the wash beneath it now uses
+   the same three values every other module's ground uses. It was running
+   #f8f9fb -> #f4f6f8, which is visibly lighter than the rest of the
+   application and cost this module some of the card-to-canvas separation the
+   Slate Canvas revision exists to protect. */
+body.npg-ui.appsup-body {
+  background:
+    radial-gradient(900px circle at 84% -80px,
+      color-mix(in srgb, var(--mod) 9%, transparent), transparent 54%),
+    linear-gradient(180deg, var(--page-top) 0, var(--page) 420px, #e3e9f1 100%);
+  background-attachment: fixed;
+}
+
+/* Module identity: a slightly richer command bar without breaking the shared
+   shell or competing with the page title. */
+.npg-ui.appsup-body .npg-modbar {
+  overflow: visible;
+  border-color: #dce5e3;
+  background:
+    radial-gradient(360px circle at 8% -90%, rgba(24,119,101,.12), transparent 70%),
+    linear-gradient(180deg, #ffffff, #fbfcfc);
+  box-shadow: var(--support-shadow-rest);
+}
+.npg-ui.appsup-body .npg-modbar-ic {
+  color: var(--support);
+  background: linear-gradient(145deg, #f5fffc, #e6f5f0);
+  border-color: var(--support-line);
+  box-shadow: inset 0 1px 0 #fff, 0 4px 12px rgba(24,119,101,.14);
+}
+.npg-ui.appsup-body .npg-modnav a.is-active { color: var(--support-deep); }
+.npg-ui.appsup-body .npg-modnav a.is-active::after { background: linear-gradient(90deg, var(--support), #3da991); }
+
+/* Submodule page headers become elevated orientation surfaces. The portfolio
+   hero below is the deliberate, more expressive exception. */
+/* No `overflow: hidden` here. It used to round the ::before corner light,
+   but it also clipped any dropdown opened from the header's own action row -
+   the Download menu on a tower page was cut off at the header's bottom edge.
+   The pseudo-element inherits the radius instead, which rounds it without a
+   clipping parent. */
+.npg-ui.appsup-body .page-head:not(.support-hero) {
+  position: relative; isolation: isolate;
+  align-items: center; margin: 8px 0 28px; padding: 24px 26px;
+  border: 1px solid var(--line); border-bottom-color: var(--line-b);
+  border-radius: 16px;
+  background:
+    radial-gradient(420px circle at 4% -70%, rgba(24,119,101,.095), transparent 68%),
+    linear-gradient(180deg, #ffffff, #fbfcfd);
+  box-shadow: var(--support-shadow-rest);
+}
+/* This was a 3px gradient bar down the left edge - the single-side accent the
+   house rule in npg.css rules out, since a stripe stuck to one side of a
+   rounded surface reads as an add-on rather than as part of the object. The
+   band's identity is now carried by a tinted hairline on all four sides (set
+   on the rule above) and the corner light this pseudo-element draws instead. */
+.npg-ui.appsup-body .page-head:not(.support-hero) {
+  border-color: color-mix(in srgb, var(--mod) 22%, var(--line));
+  border-bottom-color: color-mix(in srgb, var(--mod) 30%, var(--line));
+}
+.npg-ui.appsup-body .page-head:not(.support-hero)::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(320px circle at -3% -18%,
+              color-mix(in srgb, var(--mod) 13%, transparent), transparent 64%);
+}
+/* `isolation: isolate` above makes this header its own stacking context,
+   which CAPS the z-index of everything inside it - so a later positioned
+   sibling (the architecture pages' review card) painted straight over an
+   open Download menu even though the menu asks for z-index 1090. Lift the
+   header itself, and only while a menu inside it is open, so it never sits
+   above the rest of the page at rest. */
+.npg-ui.appsup-body .page-head:not(.support-hero):has(.dropdown-menu.open) {
+  z-index: 30;
+}
+.npg-ui.appsup-body .page-head:not(.support-hero) .page-eyebrow { color: var(--support); }
+.npg-ui.appsup-body .page-head:not(.support-hero) .page-title { font-size: clamp(24px, 2.3vw, 31px); }
+
+/* Portfolio command hero --------------------------------------------------- */
+.npg-ui.appsup-body .support-hero {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(390px, .96fr);
+  align-items: stretch; min-height: 312px;
+  width: 100%;
+  margin: 8px 0 28px; padding: 0;
+  border: 1px solid rgba(255,255,255,.12); border-radius: 20px;
+  background: linear-gradient(118deg, #171c24 0%, #20272c 50%, #12382f 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 2px 4px rgba(20,22,28,.10), 0 22px 52px rgba(20,22,28,.18);
+  color: #fff;
+}
+.npg-ui.appsup-body .support-hero::before {
+  content: ''; position: absolute; z-index: -1; inset: 0;
+  background:
+    radial-gradient(440px circle at -5% -20%, rgba(171,18,54,.26), transparent 65%),
+    radial-gradient(500px circle at 102% 106%, rgba(35,171,143,.20), transparent 66%);
+}
+.npg-ui.appsup-body .support-hero::after {
+  content: ''; position: absolute; z-index: -1; inset: 0; opacity: .42;
+  background-image: radial-gradient(circle, rgba(255,255,255,.17) 1px, transparent 1px);
+  background-size: 25px 25px;
+  mask-image: linear-gradient(90deg, transparent 34%, #000);
+  -webkit-mask-image: linear-gradient(90deg, transparent 34%, #000);
+}
+.support-hero-copy { padding: 27px 22px 20px 36px; min-width: 0; }
+.npg-ui.appsup-body .support-hero .page-eyebrow {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+  color: #a6d9cb; font-size: 10px; font-weight: 650; letter-spacing: .145em;
+}
+.support-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #58d3a9; box-shadow: 0 0 0 5px rgba(88,211,169,.10), 0 0 14px rgba(88,211,169,.55); }
+.npg-ui.appsup-body .support-hero .page-title {
+  margin: 0 0 10px; color: #fff; font-size: clamp(28px, 2.35vw, 35px); font-weight: 560; line-height: 1.12; letter-spacing: -.044em;
+}
+.npg-ui.appsup-body .support-hero .page-title span { color: #9bd6c7; }
+.npg-ui.appsup-body .support-hero .page-sub { max-width: 58ch; color: #c5d0ce; font-size: 13px; line-height: 1.58; }
+.support-hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
+.npg-ui.appsup-body .support-hero .btn-primary {
+  min-height: 42px; padding: 10px 16px; border-color: #fff;
+  background: linear-gradient(180deg, #fff, #f4f8f7); color: #173c34;
+  box-shadow: inset 0 1px 0 #fff, 0 8px 20px rgba(4,10,9,.24);
+}
+.npg-ui.appsup-body .support-hero .btn-primary:hover { background: #eaf7f3; border-color: #d8f0e9; color: #0d5146; box-shadow: 0 13px 27px rgba(4,10,9,.3); transform: translateY(-2px); }
+.support-hero-link, .support-hero-admin { display: inline-flex; align-items: center; gap: 8px; color: #e2ebea !important; font-size: 12px; font-weight: 600; text-decoration: none; padding: 8px 0; border-bottom: 1px solid rgba(159,216,201,.30); }
+.support-hero-link:hover, .support-hero-admin:hover { color: #fff !important; border-bottom-color: #86d6c1; }
+.support-hero-actions :is(a, i) { transition: transform .2s cubic-bezier(.2,.7,.3,1), color .18s ease, border-color .18s ease; }
+.support-hero-actions a:hover i:last-child { transform: translateX(3px); }
+.support-hero-proof { display: flex; gap: 0; margin-top: 20px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.11); max-width: 560px; }
+.support-hero-proof span { padding-right: 22px; color: #aebbb8; font-size: 10.5px; white-space: nowrap; }
+.support-hero-proof span + span { padding-left: 22px; border-left: 1px solid rgba(255,255,255,.11); }
+.support-hero-proof b { display: block; color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+
+.support-hero-map {
+  align-self: center; margin: 19px 24px 19px 18px; min-width: 0;
+  border: 1px solid rgba(255,255,255,.15); border-radius: 16px; overflow: hidden;
+  background: linear-gradient(145deg, rgba(255,255,255,.105), rgba(255,255,255,.045));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 20px 40px rgba(4,10,9,.24);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.support-map-top, .support-map-foot { display: flex; align-items: center; justify-content: space-between; }
+.support-map-top { padding: 13px 15px; border-bottom: 1px solid rgba(255,255,255,.10); background: rgba(8,13,14,.14); }
+.support-map-top > span, .support-map-top small { display: inline-flex; align-items: center; gap: 7px; font-size: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: .11em; }
+.support-map-top > span { color: #d3dcda; }
+.support-map-top > span i { width: 16px; height: 16px; border: 1px solid rgba(255,255,255,.18); border-radius: 5px; box-shadow: inset 0 0 0 4px rgba(72,193,164,.72); }
+.support-map-top small { color: #a9ddcf; }
+.support-map-top small i, .support-map-foot small i { width: 6px; height: 6px; border-radius: 50%; background: #58d3a9; box-shadow: 0 0 0 4px rgba(88,211,169,.09), 0 0 12px rgba(88,211,169,.45); }
+.support-map-stage { position: relative; min-height: 176px; }
+.support-map-stage > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.support-map-stage > svg circle { stroke: rgba(255,255,255,.085); stroke-width: 1; }
+.support-map-stage > svg path { stroke: rgba(119,208,185,.34); stroke-width: 1; stroke-dasharray: 4 5; }
+.support-map-core {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 90px; height: 90px; border-radius: 50%;
+  color: #fff; text-align: center;
+  background: radial-gradient(circle at 34% 24%, #278d78, #145d50 58%, #0c3931);
+  border: 1px solid rgba(156,225,207,.38);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 0 0 9px rgba(78,190,162,.055), 0 14px 30px rgba(4,9,9,.32);
+}
+.support-map-core > i { font-size: 17px; margin-bottom: 5px; }
+.support-map-core b { font-size: 9px; letter-spacing: .11em; line-height: 1.35; }
+.support-map-core small { font-size: 8.5px; color: #b5d9d0; margin-top: 3px; }
+.support-map-node { position: absolute; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(14,24,24,.70); color: #dce7e4; box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 7px 17px rgba(3,8,8,.18); font-size: 9px; font-weight: 600; }
+.support-map-node i { color: #7fcab7; }
+.node-own { left: 7%; top: 11%; }.node-run { right: 7%; top: 11%; }.node-arch { left: 7%; bottom: 11%; }.node-ready { right: 7%; bottom: 11%; }
+.support-map-foot { gap: 15px; padding: 12px 15px; border-top: 1px solid rgba(255,255,255,.10); background: rgba(8,13,14,.15); color: #aebbb8; font-size: 9px; }
+.support-map-foot span { white-space: nowrap; }.support-map-foot b { color: #fff; font-size: 10.5px; margin-right: 3px; }.support-map-foot small { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: #acd8cd; white-space: nowrap; }
+
+/* Portfolio metrics and cards --------------------------------------------- */
+.npg-ui.appsup-body .portfolio-metrics { gap: 18px; margin-bottom: 26px; }
+.npg-ui.appsup-body .portfolio-metrics .metric {
+  --metric-tone: var(--support);
+  position: relative; isolation: isolate; overflow: hidden;
+  padding: 22px 22px 20px; border: 1px solid var(--line); border-bottom-color: var(--line-b);
+  border-radius: 16px; background: linear-gradient(180deg, #fff, #fbfcfd);
+  box-shadow: var(--support-shadow-rest);
+}
+.npg-ui.appsup-body .portfolio-metrics .metric:nth-child(2) { --metric-tone: #ab1236; }
+.npg-ui.appsup-body .portfolio-metrics .metric:nth-child(3) { --metric-tone: #2768b2; }
+.npg-ui.appsup-body .portfolio-metrics .metric:nth-child(4) { --metric-tone: #7652a5; }
+.npg-ui.appsup-body .portfolio-metrics .metric::before { content: ''; position: absolute; inset: 0; z-index: -1; background: radial-gradient(210px circle at 102% -10%, color-mix(in srgb, var(--metric-tone) 12%, transparent), transparent 67%); }
+.npg-ui.appsup-body .portfolio-metrics .metric-label i { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--metric-tone); background: linear-gradient(145deg, color-mix(in srgb, var(--metric-tone) 12%, #fff), color-mix(in srgb, var(--metric-tone) 4%, #fff)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--metric-tone) 16%, transparent), 0 3px 8px color-mix(in srgb, var(--metric-tone) 15%, transparent); }
+.npg-ui.appsup-body .portfolio-metrics .metric-value { color: var(--ink); font-size: 35px; margin-top: 12px; letter-spacing: -.035em; }
+.npg-ui.appsup-body .metric-link { transition: transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s ease, border-color .2s ease; }
+.npg-ui.appsup-body .metric-link:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--metric-tone) 30%, var(--line)); box-shadow: var(--support-shadow-lift), 0 0 0 4px color-mix(in srgb, var(--metric-tone) 6%, transparent); }
+
+.npg-ui.appsup-body .support-brief {
+  border-color: var(--support-line); border-radius: 15px;
+  background: radial-gradient(300px circle at 0 -80%, rgba(24,119,101,.13), transparent 72%), linear-gradient(180deg, #f8fffd, #edf8f5);
+  box-shadow: inset 0 1px 0 #fff, 0 6px 18px rgba(24,119,101,.065);
+}
+.npg-ui.appsup-body .brief-icon { border-color: var(--support-line); color: var(--support); background: linear-gradient(145deg, #fff, #ecf9f5); box-shadow: inset 0 1px 0 #fff, 0 4px 12px rgba(24,119,101,.14); }
+
+.npg-ui.appsup-body .portfolio-toolbar { border-radius: 13px; border-bottom-color: var(--line-b); background: linear-gradient(180deg, #fff, #fbfcfd); box-shadow: var(--support-shadow-rest); }
+.npg-ui.appsup-body .portfolio-search i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--support); background: var(--support-soft); }
+.npg-ui.appsup-body .toolbar-select select { border-radius: 8px; background: linear-gradient(180deg, #fff, #fafbfc); box-shadow: inset 0 1px 2px rgba(20,22,28,.045); }
+
+.npg-ui.appsup-body .portfolio-card {
+  position: relative; isolation: isolate; overflow: hidden;
+  height: 320px;
+  border-radius: 16px;
+  /* The module's green carries the card, not just its icon. Body settles
+     into a 5% trace so it meets the tinted footer as one surface. */
+  border-color: color-mix(in srgb, var(--support) 20%, var(--line));
+  border-bottom-color: color-mix(in srgb, var(--support) 26%, var(--line-b));
+  background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--support) 5%, #ffffff));
+  box-shadow: var(--support-shadow-rest);
+  transition: transform .24s cubic-bezier(.2,.7,.3,1), border-color .2s ease, box-shadow .24s cubic-bezier(.2,.7,.3,1);
+}
+/* Widened from a 270px circle at 9% to a 400px one at 17%: at the old values
+   the hue was spent before it cleared the tower icon, so a grid of towers
+   read as white rectangles. Still one soft source off the top-left, gone by
+   the time it reaches the description. */
+.npg-ui.appsup-body .portfolio-card::before { content: ''; position: absolute; inset: 0; z-index: -1; background: radial-gradient(400px circle at -4% -10%, color-mix(in srgb, var(--support) 17%, transparent), transparent 76%); opacity: .85; transition: opacity .22s ease; }
+.npg-ui.appsup-body .portfolio-card:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--support) 44%, var(--line)); box-shadow: var(--support-shadow-lift), 0 0 0 4px rgba(24,119,101,.045); }
+.npg-ui.appsup-body .portfolio-card:hover::before { opacity: 1; }
+.npg-ui.appsup-body .portfolio-card .tower-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: var(--support); border-color: var(--support-line); background: linear-gradient(145deg, #f7fffd, #e8f7f2); box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(24,119,101,.04), 0 4px 11px rgba(24,119,101,.14); }
+.npg-ui.appsup-body .portfolio-card h3 {
+  min-height: 47px; max-height: 47px; font-size: 17.5px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.npg-ui.appsup-body .portfolio-card h3 a:hover { color: var(--support-deep); }
+.npg-ui.appsup-body .portfolio-description {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  height: 42px; min-height: 42px; max-height: 42px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.npg-ui.appsup-body .portfolio-owner span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The footer was a neutral grey step, which left the icon as the only colour
+   on the card. Tinted, it becomes a real BLOCK of the module's hue - a region
+   with an edge - rather than another diffuse wash. */
+.npg-ui.appsup-body .portfolio-card-footer {
+  justify-content: flex-start; margin: 0 -22px; padding: 15px 22px;
+  border-top-color: color-mix(in srgb, var(--support) 22%, var(--line));
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--support) 10%, #ffffff),
+              color-mix(in srgb, var(--support) 15%, #ffffff));
+}
+.npg-ui.appsup-body .portfolio-card .text-link { color: var(--support-deep); }
+
+/* Shared surfaces across every Application Support submodule --------------- */
+.npg-ui.appsup-body :is(.card, .form-section, .detail-hero, .tower-card, .app-card, .item-card, .q-panel, .review-card, .about-card, .about-panel) {
+  border-color: var(--line); border-bottom-color: var(--line-b);
+  border-radius: 16px; background: linear-gradient(180deg, #fff, #fcfcfd);
+  box-shadow: var(--support-shadow-rest);
+}
+.npg-ui.appsup-body :is(.card-head, .form-section-head) {
+  background: linear-gradient(180deg, rgba(252,253,253,.97), rgba(245,248,248,.94));
+  border-bottom-color: var(--line); padding-block: 17px;
+}
+.npg-ui.appsup-body :is(.card-title, .form-section-head h3) i { color: var(--support); }
+/* ---------------------------------------------------------------------------
+   APPLICATION RECORD - every section gets the module's light
+
+   The record page is nineteen .card sections stacked down five tabs, and at
+   rest every one of them was a white rectangle with a near-white head. Read
+   end to end that is a wall: nothing marks where one section stops and the
+   next begins except a hairline, and the page has no depth at all.
+
+   Each section now gets the same three things the tower and application cards
+   got, at the lighter weight a READ surface deserves - these are panels you
+   sit inside, not tiles you click:
+
+     a tinted head    the section's cap, a real block of the module's green
+                      rather than another shade of white. This is what makes
+                      the stack scannable.
+     a corner light   one soft source off the top-left of the body, so the
+                      surface is lit rather than flat.
+     a hue edge       the border carries a trace of the green at 16% - below
+                      the 20% the clickable cards use, because a panel that is
+                      not a target should not advertise itself like one.
+
+   The body stays white under the text and the tables; the light is spent
+   before it reaches them.
+
+   Scoped to this ONE endpoint on purpose. `.card` is the module's general
+   section surface - towers, quality, architecture, administration all use it -
+   and tinting every card in Application Support is a different, much larger
+   change than the record page asked for.
+   --------------------------------------------------------------------------- */
+.npg-ui.appsup-body[data-as-page="application_support.view_application"] .card {
+  border-color: color-mix(in srgb, var(--support) 16%, var(--line));
+  border-bottom-color: color-mix(in srgb, var(--support) 22%, var(--line-b));
+  background:
+    radial-gradient(360px circle at -2% -12%,
+                    color-mix(in srgb, var(--support) 12%, transparent), transparent 72%),
+    linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--support) 4%, #ffffff));
+}
+.npg-ui.appsup-body[data-as-page="application_support.view_application"] .card > .card-head {
+  border-bottom-color: color-mix(in srgb, var(--support) 24%, var(--line));
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--support) 7%, #ffffff),
+              color-mix(in srgb, var(--support) 12%, #ffffff));
+}
+
+/* The quality scorecards carry their OWN tone - green, amber or red for the
+   grade - and a second hue underneath would be two colours arguing on one
+   small surface. They keep the neutral ground they already had. */
+.npg-ui.appsup-body[data-as-page="application_support.view_application"] :is(.q-panel, .item-card) {
+  background: linear-gradient(180deg, #ffffff, #fcfcfd);
+}
+
+/* ---------------------------------------------------------------------------
+   REPEAT SECTIONS - the Add button lives UNDER the rows
+
+   Server Details, Support Team, Business Users, Vendors and External
+   Interfaces all grow a row at a time. The Add button used to sit in the
+   section head, which meant that on an application with a dozen servers the
+   loop was: scroll up, click Add, scroll back down to the new row, type,
+   scroll up again. The button now sits at the end of the list, where the new
+   row appears, so the next row is always one click from the caret.
+
+   It reads as a dashed slot rather than a solid button bar: an empty place
+   waiting for a row, which is what it is.
+   --------------------------------------------------------------------------- */
+.npg-ui.appsup-body .repeat-add { margin-top: 12px; }
+.npg-ui.appsup-body .repeat-add .btn {
+  width: 100%; justify-content: center; gap: 8px;
+  padding-block: 11px;
+  border: 1px dashed color-mix(in srgb, var(--support) 42%, var(--line-2));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--support) 5%, #ffffff);
+  color: var(--support-deep); font-weight: 600;
+  transition: background .18s ease, border-color .18s ease, color .18s ease;
+}
+.npg-ui.appsup-body .repeat-add .btn:hover {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--support) 55%, var(--line-2));
+  background: color-mix(in srgb, var(--support) 11%, #ffffff);
+}
+.npg-ui.appsup-body .repeat-add .btn:focus-visible { outline-offset: 2px; }
+
+/* The row a click just created. Held for one beat so the eye lands on it -
+   with the button under the list, the new row appears just above where the
+   pointer already is, and without this it is easy to miss that anything
+   happened. */
+@keyframes appsup-row-in {
+  from { background: color-mix(in srgb, var(--support) 16%, #ffffff);
+         border-color: color-mix(in srgb, var(--support) 45%, var(--line)); }
+}
+.npg-ui.appsup-body .repeat-row.is-new { animation: appsup-row-in 1.1s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .npg-ui.appsup-body .repeat-row.is-new { animation: none; }
+}
+
+/* Application card: the same light logic as the tower card it sits under, at
+   the smaller card's scale. The business-criticality tier is NOT what is
+   tinted here - that stays on the bc-pill, for the reason recorded against
+   .app-card in appsupport.css: a colour per tier turned a grid of
+   applications into stripes. */
+.npg-ui.appsup-body .app-card {
+  isolation: isolate; overflow: visible;
+  border-color: color-mix(in srgb, var(--support) 20%, var(--line));
+  border-bottom-color: color-mix(in srgb, var(--support) 26%, var(--line-b));
+  background:
+    radial-gradient(300px circle at -4% -14%,
+                    color-mix(in srgb, var(--support) 15%, transparent), transparent 74%),
+    linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--support) 5%, #ffffff));
+}
+/* The meta row becomes the card's tray - full bleed to the padding box, the
+   way the tower card's footer and the home launcher's do. No overflow:hidden
+   on the card: it carries action buttons, and clipping is exactly how the
+   Download/Manage menus went missing elsewhere in this module. */
+.npg-ui.appsup-body .app-card .app-meta {
+  margin: auto -16px -16px; padding: 11px 16px;
+  border-top-color: color-mix(in srgb, var(--support) 22%, var(--line));
+  border-radius: 0 0 15px 15px;
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--support) 10%, #ffffff),
+              color-mix(in srgb, var(--support) 15%, #ffffff));
+}
+
+.npg-ui.appsup-body :is(.tower-card, .app-card, a.about-card) { transition: transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s ease, border-color .2s ease; }
+/* 44%, not the old 25%: the rest border now carries the hue at 20%, so 25%
+   was no longer a visible change of state. */
+.npg-ui.appsup-body :is(.tower-card, .app-card, a.about-card):hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--support) 44%, var(--line)); box-shadow: var(--support-shadow-lift), 0 0 0 4px rgba(24,119,101,.04); }
+.npg-ui.appsup-body .detail-hero { position: relative; background: radial-gradient(460px circle at 0 -120px, rgba(24,119,101,.11), transparent 70%), linear-gradient(180deg, #fff, #fafcfc); }
+.npg-ui.appsup-body .item-card { box-shadow: inset 0 1px 0 #fff, 0 2px 7px rgba(20,22,28,.04); }
+.npg-ui.appsup-body .item-card.critical { border: 1px solid color-mix(in srgb, var(--stop) 26%, var(--line)) !important; background: radial-gradient(230px circle at 0 -80px, rgba(180,35,24,.08), transparent 70%), linear-gradient(180deg, #fff, #fffafa); }
+.npg-ui.appsup-body .about-card-icon { color: var(--support); background: linear-gradient(145deg, #f6fffc, #e8f7f2); box-shadow: inset 0 0 0 1px var(--support-line), 0 4px 10px rgba(24,119,101,.12); }
+
+/* Data-quality scorecards retain their semantic colours while gaining the
+   same depth and light logic as the rest of the workspace. */
+.npg-ui.appsup-body .q-panel { position: relative; isolation: isolate; overflow: hidden; }
+.npg-ui.appsup-body .q-panel::before { content: ''; position: absolute; inset: 0; z-index: -1; background: radial-gradient(230px circle at -4% -20%, color-mix(in srgb, var(--q-tone, var(--support)) 10%, transparent), transparent 66%); }
+.npg-ui.appsup-body .q-ring { filter: drop-shadow(0 8px 16px rgba(20,22,28,.09)); }
+.npg-ui.appsup-body :is(.q-chip, .badge) { box-shadow: inset 0 1px 0 rgba(255,255,255,.6), inset 0 0 0 1px rgba(20,22,28,.05); }
+
+/* Architecture and enterprise-architecture canvases. The worlds themselves
+   retain their fixed geometry; only the surrounding controls and evidence
+   surfaces are upgraded. */
+.npg-ui.appsup-body :is(.arch-tools, .ea-tools) { border: 1px solid var(--line); border-bottom-color: var(--line-b); border-radius: 14px; background: linear-gradient(180deg, #fff, #fafcfc); box-shadow: var(--support-shadow-rest); padding: 11px !important; }
+.npg-ui.appsup-body :is(.arch-shell, .ea-shell) { border-radius: 18px; border-color: #d8dfdf; box-shadow: inset 0 1px 0 #fff, 0 2px 5px rgba(20,22,28,.055), 0 18px 44px rgba(20,22,28,.09); overflow: hidden; }
+.npg-ui.appsup-body :is(.arch-panel, .ea-panel) { background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,250,.98)); box-shadow: -12px 0 34px rgba(20,22,28,.08); }
+.npg-ui.appsup-body :is(.arch-fold, .ea-fold) { border-color: var(--line); border-bottom-color: var(--line-b); border-radius: 14px; background: linear-gradient(180deg, #fff, #fbfcfd); box-shadow: var(--support-shadow-rest); overflow: hidden; }
+.npg-ui.appsup-body :is(.arch-fold, .ea-fold) > summary { background: linear-gradient(180deg, #fff, #f7faf9); }
+.npg-ui.appsup-body .review-card { border-color: var(--line); border-radius: 15px; background: linear-gradient(180deg, #fff, #fbfcfd); box-shadow: var(--support-shadow-rest); }
+.npg-ui.appsup-body .review-card { position: relative; overflow: hidden; background: radial-gradient(420px circle at 0 -150px, rgba(24,119,101,.10), transparent 70%), linear-gradient(180deg, #fff, #fbfcfd); }
+
+@media (max-width: 1120px) {
+  .npg-ui.appsup-body .support-hero { width: 100%; grid-template-columns: minmax(0,1fr) 370px; }
+  .support-hero-copy { padding-left: 30px; }
+  .support-map-node { padding: 6px 7px; }
+}
+
+@media (max-width: 900px) {
+  .npg-ui.appsup-body .support-hero { display: block; min-height: 0; }
+  .support-hero-copy { padding: 25px 26px 20px; }
+  .support-hero-map { display: none; }
+  .npg-ui.appsup-body .page-head:not(.support-hero) { padding: 21px 22px; }
+}
+
+@media (max-width: 600px) {
+  .npg-ui.appsup-body .support-hero { width: 100%; border-radius: 16px; }
+  .npg-ui.appsup-body .support-hero .page-title { font-size: 27px; }
+  .support-hero-proof { overflow-x: auto; scrollbar-width: none; }
+  .support-hero-proof::-webkit-scrollbar { display: none; }
+  .support-hero-proof span { padding-right: 14px; }
+  .support-hero-proof span + span { padding-left: 14px; }
+  .npg-ui.appsup-body .portfolio-card-footer { margin-inline: -20px; padding-inline: 20px; }
+  .npg-ui.appsup-body :is(.card, .form-section, .detail-hero, .tower-card, .app-card, .item-card, .q-panel, .review-card, .about-card, .about-panel) { border-radius: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .npg-ui.appsup-body :is(.metric-link, .portfolio-card, .tower-card, .app-card, a.about-card):hover { transform: none; }
+}
+
+
+/* ===========================================================================
+   SOFTWARE INVENTORY - the shelf
+
+   Lives here rather than in an inline <style> in the layout, because these
+   rules need the module tokens (--mod / --mod-ink / --mod-tint) and the shared
+   ink, line and surface ramps. The inline block it replaces restated its own
+   greys (#64748B, #E2E8F0, #F8FAFC) and its own burgundy (#AB1236), none of
+   which came from the design system.
+   =========================================================================== */
+
+/* ------------------------------------------------------------ the toolbar */
+
+/*
+   Search and sort sit on ONE baseline.
+
+   The bug this fixes: the field, its helper text and the Search button were
+   siblings in a flex row aligned to `flex-end`, so the button aligned to the
+   bottom of the HINT and floated a line below the input it belongs to. The
+   field and its buttons are now their own row, with the hint underneath the
+   whole thing.
+*/
+.npg-ui.sw-body .sw-toolbar-card { padding: 16px 18px; margin-bottom: 18px; }
+
+.npg-ui.sw-body .sw-toolbar {
+  display: flex; flex-wrap: wrap; gap: 18px 24px;
+  align-items: flex-start; justify-content: space-between;
+}
+.npg-ui.sw-body .sw-search { flex: 1 1 420px; min-width: 280px; }
+
+.npg-ui.sw-body .sw-field-label {
+  display: block;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: 7px;
+}
+
+.npg-ui.sw-body .sw-search-row {
+  display: flex; align-items: stretch; gap: 8px;
+}
+
+/* The field is a lit well with the glass inside it, so the icon sits IN the
+   input rather than beside it and the control reads as one object. */
+.npg-ui.sw-body .sw-search-input {
+  position: relative; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center;
+}
+.npg-ui.sw-body .sw-search-input > i {
+  position: absolute; left: 12px;
+  font-size: 12.5px; color: var(--ink-4); pointer-events: none;
+}
+.npg-ui.sw-body .sw-search-input input {
+  width: 100%; height: 38px;
+  padding: 0 12px 0 33px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, #fdfdfe, #ffffff);
+  box-shadow: inset 0 1px 2px rgba(16, 22, 38, .06);
+  font: inherit; font-size: 13px; color: var(--ink);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.npg-ui.sw-body .sw-search-input input::placeholder { color: var(--ink-4); }
+.npg-ui.sw-body .sw-search-input input:hover { border-color: var(--ink-4); }
+.npg-ui.sw-body .sw-search-input input:focus {
+  outline: none;
+  border-color: var(--mod);
+  box-shadow: inset 0 1px 2px rgba(16, 22, 38, .04),
+              0 0 0 3px color-mix(in srgb, var(--mod) 18%, transparent);
+}
+/* Matching the input's height is what puts the button on its baseline. */
+.npg-ui.sw-body :is(.sw-search-go, .sw-search-clear) {
+  height: 38px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+}
+.npg-ui.sw-body .sw-search-clear { width: 38px; padding: 0; }
+
+.npg-ui.sw-body .sw-hint {
+  font-size: 11.5px; line-height: 1.55; color: var(--ink-3);
+  margin: 8px 0 0; max-width: 68ch;
+}
+.npg-ui.sw-body .sw-hint code {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--sunken); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0 4px; color: var(--ink-2);
+}
+
+.npg-ui.sw-body .sw-sort { flex: 0 0 auto; }
+.npg-ui.sw-body .sw-sort-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Sort chips: the resting state is a quiet control, the active one is the
+   module's own colour - not the brand, which belongs to the product. */
+.npg-ui.sw-body .sort-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 38px; padding: 0 14px;
+  border: 1px solid var(--line-2); border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #fbfbfc);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(16, 22, 38, .06);
+  font-size: 12.5px; font-weight: 550; color: var(--ink-2);
+  text-decoration: none; white-space: nowrap;
+  transition: border-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.npg-ui.sw-body .sort-chip:hover { border-color: var(--ink-4); color: var(--ink); }
+.npg-ui.sw-body .sort-chip.is-active {
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--mod) 10%, #fff), var(--mod-tint));
+  border-color: color-mix(in srgb, var(--mod) 38%, transparent);
+  color: var(--mod-ink); font-weight: 600;
+  box-shadow: inset 0 1px 0 #ffffff,
+              0 1px 2px color-mix(in srgb, var(--mod) 22%, transparent);
+}
+
+/* ---------------------------------------------------------- the catalogue */
+
+.npg-ui.sw-body .sw-catalogue-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin: 26px 0 14px;
+}
+.npg-ui.sw-body .sw-catalogue-title {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; font-weight: 600; letter-spacing: -0.018em;
+  color: var(--ink); margin: 0;
+}
+.npg-ui.sw-body .sw-catalogue-title .ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  font-size: 12px; color: var(--mod-ink);
+  background: linear-gradient(155deg,
+              color-mix(in srgb, var(--mod) 16%, #fff),
+              color-mix(in srgb, var(--mod) 6%, #fff));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9),
+              inset 0 0 0 1px color-mix(in srgb, var(--mod) 22%, transparent);
+}
+.npg-ui.sw-body .sw-catalogue-title .count {
+  font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  padding: 1px 9px; border-radius: 20px;
+  background: var(--mod-tint); color: var(--mod-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mod) 22%, transparent);
+}
+
+.npg-ui.sw-body .sw-shelf { display: flex; flex-direction: column; gap: 16px; }
+
+/* -------------------------------------------------------- a package card */
+
+.npg-ui.sw-body .sw-pkg { padding: 0; overflow: hidden; }
+
+.npg-ui.sw-body .sw-pkg-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff,
+              color-mix(in srgb, var(--mod) 6%, #f2f6fb));
+}
+.npg-ui.sw-body .sw-pkg-id { min-width: 0; }
+.npg-ui.sw-body .sw-pkg-name {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.018em;
+  color: var(--ink); margin: 0; word-break: break-word;
+}
+.npg-ui.sw-body .sw-pkg-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 16px;
+  margin: 5px 0 0;
+  font-size: 11.5px; color: var(--ink-3);
+}
+.npg-ui.sw-body .sw-pkg-meta i { margin-right: 5px; opacity: .75; }
+
+.npg-ui.sw-body .sw-pkg-actions {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.npg-ui.sw-body .sw-pkg-actions form { margin: 0; }
+
+/* One icon-button treatment for every row action in the module. */
+.npg-ui.sw-body .sw-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex-shrink: 0;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, #ffffff, #fbfbfc);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(16, 22, 38, .06);
+  color: var(--ink-3); font-size: 12px; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.npg-ui.sw-body .sw-icon-btn:hover {
+  color: var(--mod-ink);
+  border-color: color-mix(in srgb, var(--mod) 34%, var(--line-2));
+  background: linear-gradient(180deg, #ffffff, var(--mod-tint));
+}
+/* Delete stays on the status ramp, never the module hue - a destructive
+   action means the same thing in every module. */
+.npg-ui.sw-body .sw-icon-btn.is-danger:hover {
+  color: var(--stop);
+  border-color: color-mix(in srgb, var(--stop) 34%, var(--line-2));
+  background: linear-gradient(180deg, #ffffff, var(--stop-tint));
+}
+
+/* ------------------------------------------------- the publish/edit panel */
+
+/*
+   One panel does both jobs. Its heading says which, because a form that
+   silently changes what it will do is a trap - the title, the note and the
+   submit label all move together.
+*/
+.npg-ui.sw-body .sw-panel-head {
+  margin: -2px 0 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.npg-ui.sw-body .sw-panel-title {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.018em;
+  color: var(--ink); margin: 0;
+}
+.npg-ui.sw-body .sw-panel-sub {
+  font-size: 12.5px; color: var(--ink-3); margin: 4px 0 0;
+}
+
+/* ------------------------------------------------------------ the body */
+
+.npg-ui.sw-body .sw-pkg-body { padding: 0; }
+.npg-ui.sw-body .sw-pkg-desc {
+  padding: 14px 20px;
+  font-size: 13px; line-height: 1.6; color: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  word-break: break-word;
+}
+.npg-ui.sw-body .sw-muted { color: var(--ink-3); font-style: italic; }
+
+.npg-ui.sw-body .sw-ver-wrap { overflow-x: auto; }
+.npg-ui.sw-body .sw-ver-table {
+  width: 100%; border-collapse: collapse; min-width: 620px;
+}
+.npg-ui.sw-body .sw-ver-table th {
+  padding: 9px 20px;
+  text-align: left; white-space: nowrap;
+  font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--mod) 4%, #f7f9fd),
+              color-mix(in srgb, var(--mod) 6%, #f0f4fa));
+  border-bottom: 1px solid color-mix(in srgb, var(--mod) 22%, var(--line-2));
+}
+.npg-ui.sw-body .sw-ver-table td {
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px; color: var(--ink-2); vertical-align: middle;
+}
+.npg-ui.sw-body .sw-ver-table tbody tr:last-child td { border-bottom: 0; }
+.npg-ui.sw-body .sw-ver-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--mod) 6%, #f6f8fc);
+}
+.npg-ui.sw-body .sw-ver-table :is(th, td).num {
+  text-align: right; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.npg-ui.sw-body .sw-ver-table :is(th, td).act {
+  width: 1%; white-space: nowrap; text-align: right;
+}
+.npg-ui.sw-body .sw-ver-table .act form { margin: 0; display: inline-flex; }
+
+.npg-ui.sw-body .sw-ver-label {
+  font-weight: 600; color: var(--ink); margin-right: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.npg-ui.sw-body .sw-ver-file {
+  display: inline-block; max-width: 34ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
+  font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+}
+.npg-ui.sw-body .sw-ver-date { white-space: nowrap; color: var(--ink-3); font-size: 12.5px; }
+
+.npg-ui.sw-body .sw-pill {
+  display: inline-block; padding: 1px 8px; border-radius: 20px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+  background: var(--sunken); color: var(--ink-3);
+  box-shadow: inset 0 0 0 1px rgba(16, 22, 38, .07);
+  vertical-align: 1px;
+}
+/* The current release is the one most people want, so it is the only row
+   marked - in the status green, because "this is the one" is a state. */
+.npg-ui.sw-body .sw-pill.is-latest {
+  background: var(--ok-tint); color: var(--ok);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.npg-ui.sw-body .sw-ver-table tr.is-latest td { background: rgba(255, 255, 255, .001); }
+
+/* Only the latest release gets a filled download; the older ones are quiet
+   secondary buttons, so a row of them never competes with the current build. */
+.npg-ui.sw-body .sw-dl { white-space: nowrap; }
+
+/* ------------------------------------------------------------- empty state */
+
+.npg-ui.sw-body .sw-empty { text-align: center; padding: 48px 24px; }
+.npg-ui.sw-body .sw-empty-ic {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; border-radius: 15px; margin-bottom: 14px;
+  font-size: 20px; color: var(--mod-ink);
+  background: linear-gradient(155deg,
+              color-mix(in srgb, var(--mod) 14%, #fff),
+              color-mix(in srgb, var(--mod) 5%, #fff));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9),
+              inset 0 0 0 1px color-mix(in srgb, var(--mod) 18%, transparent);
+}
+.npg-ui.sw-body .sw-empty h3 {
+  font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 6px;
+}
+.npg-ui.sw-body .sw-empty p { font-size: 13px; color: var(--ink-3); margin: 0; }
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 760px) {
+  .npg-ui.sw-body .sw-toolbar { gap: 16px; }
+  .npg-ui.sw-body .sw-sort { width: 100%; }
+  .npg-ui.sw-body .sw-search-row { flex-wrap: wrap; }
+  .npg-ui.sw-body .sw-search-input { flex-basis: 100%; }
+  .npg-ui.sw-body .sw-pkg-head { flex-wrap: wrap; }
+  .npg-ui.sw-body :is(.sw-pkg-head, .sw-pkg-desc) { padding-inline: 16px; }
+  .npg-ui.sw-body .sw-ver-table :is(th, td) { padding-inline: 16px; }
+}
+
+/* ------------------------------------------------- the software team page */
+
+.npg-ui.sw-body .sw-members-note { padding: 16px 20px; margin-bottom: 14px; }
+.npg-ui.sw-body .sw-members-note p {
+  font-size: 13px; line-height: 1.6; color: var(--ink-2); margin: 0 0 6px;
+}
+.npg-ui.sw-body .sw-members-note p:last-child { margin-bottom: 0; }
+
+.npg-ui.sw-body .sw-add-member { padding: 16px 20px; margin-bottom: 18px; }
+/* The picker reuses the search field's material so the two controls in this
+   module read as one family; a <select> needs its own padding because it
+   carries the browser's chevron on the right. */
+.npg-ui.sw-body .sw-picker select {
+  width: 100%; height: 38px;
+  padding: 0 12px 0 33px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, #fdfdfe, #ffffff);
+  box-shadow: inset 0 1px 2px rgba(16, 22, 38, .06);
+  font: inherit; font-size: 13px; color: var(--ink);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.npg-ui.sw-body .sw-picker select:hover { border-color: var(--ink-4); }
+.npg-ui.sw-body .sw-picker select:focus {
+  outline: none; border-color: var(--mod);
+  box-shadow: inset 0 1px 2px rgba(16, 22, 38, .04),
+              0 0 0 3px color-mix(in srgb, var(--mod) 18%, transparent);
+}
+.npg-ui.sw-body .sw-picker select:disabled {
+  background: var(--sunken); color: var(--ink-3); cursor: not-allowed;
+}
+.npg-ui.sw-body .sw-search-go:disabled { opacity: .5; cursor: not-allowed; }
+
+.npg-ui.sw-body .sw-member-real {
+  color: var(--ink-3); font-weight: 400; margin-left: 8px;
+}
+.npg-ui.sw-body .sw-member-by {
+  display: block; font-size: 11px; color: var(--ink-4); margin-top: 2px;
+}
+
+/* ===========================================================================
+   SOFTWARE INVENTORY - restricted software
+
+   Two audiences, so two visual jobs: the PUBLISH side needs a control where
+   "open to everyone" is as visible as "towers only" (a publisher must see
+   they are opening a package up, not merely fail to tick something), and the
+   CATALOGUE side needs to say, on a package somebody cannot download, who
+   holds it - so the answer to "why can't I have this?" is on screen before
+   they ask.
+
+   Both use the status ramp rather than the module hue: restricted is a STATE
+   of a package, and a state means the same thing in every module.
+   =========================================================================== */
+
+/* ---------------------------------------------------- the audience control */
+
+.npg-ui.sw-body .sw-audience {
+  margin: 14px 0 0; padding: 14px 16px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: var(--sunken);
+}
+.npg-ui.sw-body .sw-audience legend {
+  float: none; width: auto; margin: 0 0 10px; padding: 0;
+}
+
+/* One radio per row, the whole row clickable. The card lifts when chosen so
+   the selected audience is readable at a glance from across the form. */
+.npg-ui.sw-body .sw-aud-opt {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: #fff; cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.npg-ui.sw-body .sw-aud-opt:last-of-type { margin-bottom: 0; }
+.npg-ui.sw-body .sw-aud-opt:hover { border-color: var(--ink-4); }
+.npg-ui.sw-body .sw-aud-opt input[type="radio"] { margin-top: 3px; flex-shrink: 0; }
+.npg-ui.sw-body .sw-aud-opt:has(input:checked) {
+  border-color: color-mix(in srgb, var(--mod) 40%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mod) 12%, transparent);
+}
+/* A disabled option means there are no towers to restrict TO - it has to read
+   as unavailable rather than as simply not chosen. */
+.npg-ui.sw-body .sw-aud-opt:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+
+.npg-ui.sw-body .sw-aud-body { display: block; min-width: 0; }
+.npg-ui.sw-body .sw-aud-title {
+  display: block; font-size: 13px; font-weight: 600; color: var(--ink);
+}
+.npg-ui.sw-body .sw-aud-title i { margin-right: 6px; color: var(--ink-3); font-size: 11.5px; }
+.npg-ui.sw-body .sw-aud-note {
+  display: block; margin-top: 2px;
+  font-size: 11.5px; line-height: 1.5; color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ tower picker */
+
+.npg-ui.sw-body .sw-tower-pick {
+  margin-top: 10px; padding: 12px 14px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: #fff;
+}
+.npg-ui.sw-body .sw-tower-pick-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.npg-ui.sw-body .sw-tower-bulk {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--ink-4);
+}
+.npg-ui.sw-body .sw-linkish {
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 11.5px; font-weight: 550;
+  color: var(--mod-ink); cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Auto-fill rather than a fixed column count: a shelf restricted to three
+   towers and one restricted to twenty both have to read well, and the grid
+   is the only thing here that knows how wide the panel ended up. */
+.npg-ui.sw-body .sw-tower-grid {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  max-height: 216px; overflow-y: auto;
+}
+.npg-ui.sw-body .sw-tower-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; min-width: 0;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, #ffffff, #fbfbfc);
+  font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.npg-ui.sw-body .sw-tower-chip span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.npg-ui.sw-body .sw-tower-chip:hover { border-color: var(--ink-4); color: var(--ink); }
+.npg-ui.sw-body .sw-tower-chip:has(input:checked) {
+  border-color: color-mix(in srgb, var(--mod) 40%, transparent);
+  background: var(--mod-tint); color: var(--mod-ink); font-weight: 550;
+}
+.npg-ui.sw-body .sw-tower-chip input { flex-shrink: 0; }
+
+/* Shown only when the typed name already exists on the shelf, so it carries a
+   warning weight - the audience on screen was just changed under the person. */
+.npg-ui.sw-body .sw-aud-carry {
+  margin: 10px 0 0; padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--warn-tint);
+  font-size: 11.5px; line-height: 1.55; color: var(--ink-2);
+}
+
+/* --------------------------------------------- the catalogue: restricted */
+
+.npg-ui.sw-body .sw-aud-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  vertical-align: 2px; margin-left: 8px;
+  padding: 2px 9px; border-radius: 20px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+  white-space: nowrap;
+}
+.npg-ui.sw-body .sw-aud-badge i { font-size: 9.5px; }
+/* Restricted AND you have it: a fact about the package, stated quietly. */
+.npg-ui.sw-body .sw-aud-badge.is-open {
+  background: var(--sunken); color: var(--ink-3);
+  box-shadow: inset 0 0 0 1px rgba(16, 22, 38, .09);
+}
+/* Restricted AND you do not: the one that has to be noticed, on the caution
+   ramp rather than the stop ramp - nothing is broken and nothing went wrong,
+   the package simply is not yours. */
+.npg-ui.sw-body .sw-aud-badge.is-locked {
+  background: var(--warn-tint); color: var(--warn);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 26%, transparent);
+}
+
+.npg-ui.sw-body .sw-aud-line {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin: 8px 0 0; font-size: 11.5px;
+}
+.npg-ui.sw-body .sw-aud-lead {
+  font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-4);
+  margin-right: 2px;
+}
+.npg-ui.sw-body .sw-tower-tag {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 550; color: var(--ink-2);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.npg-ui.sw-body .sw-tower-tag.is-retired {
+  color: var(--ink-4); text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.npg-ui.sw-body .sw-tower-tag.is-none {
+  color: var(--warn); background: var(--warn-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 26%, transparent);
+  font-weight: 500;
+}
+.npg-ui.sw-body .sw-aud-why {
+  flex-basis: 100%; margin-top: 2px;
+  font-size: 11px; font-style: italic; color: var(--ink-4);
+}
+
+/* The withheld download. A button shape, because the person is meant to see
+   that there IS a release here and that it is not theirs - a blank cell would
+   read as a missing file. Not a <button>: there is nothing to press. */
+.npg-ui.sw-body .sw-dl.is-locked {
+  cursor: not-allowed;
+  color: var(--warn); background: var(--warn-tint);
+  border-color: color-mix(in srgb, var(--warn) 26%, transparent);
+  box-shadow: none;
+}
+.npg-ui.sw-body .sw-dl.is-locked:hover { color: var(--warn); background: var(--warn-tint); }
+
+@media (max-width: 760px) {
+  .npg-ui.sw-body .sw-tower-grid { grid-template-columns: 1fr; }
+}
+
+/* ===========================================================================
+   APPLICATION SUPPORT - TEAM MEMBERS
+
+   The page used to carry its own <style> block: a flat white header, four
+   plain metric boxes, a bordered filter strip and two tables. Everything it
+   described already existed in this module, better - the command hero, the
+   portfolio metric tiles, the toolbar - so the page now composes those and
+   this block only adds what is genuinely new to it:
+
+     1. THE COVERAGE PANEL in the hero. The hero's right-hand surface is a
+        decorative diagram on the portfolio page; here it carries the verdict
+        - one ring for the share of applications with two or more people, and
+        the estate split three ways beneath it. It is the one number a head of
+        support is looking for, so it sits above the fold, not in a tile.
+
+     2. A PERSON HAS A FACE. This is a page about people and it showed none.
+        Initials on a hue keyed to the name (see the macro) give every row an
+        anchor the eye can find again in the second table.
+
+     3. WORKLOAD IS A LENGTH, NOT A NUMBER. "7" tells you nothing until you
+        know the top is 10. The meter is scaled to the busiest person, so the
+        column reads as one ranking.
+
+     4. ROWS ARE ONE HEIGHT. Chips are capped at six with the rest behind a
+        disclosure. Rows previously ran to three wrapped lines of chips, which
+        is what made a 22-row table feel like a wall.
+
+   Scoping is by the tm- prefix, not by [data-as-page]: every class below is
+   this page's own, and the two it borrows from the module (.support-hero-map,
+   .metric) are qualified by a tm- parent. The status aliases sit on the
+   module rather than on the page so that a tm- class always resolves, even if
+   one of them is reused on another Application Support screen later.
+   =========================================================================== */
+
+.npg-ui.appsup-body {
+  --tm-ok:   var(--ok);
+  --tm-warn: var(--warn);
+  --tm-bad:  var(--stop);
+}
+
+/* --- hero: the coverage panel -------------------------------------------- */
+
+/* The panel holds three rows of type rather than a diagram, so it hugs its
+   content and stays centred - stretching it to the hero's full height left a
+   tall empty well under the split. */
+.npg-ui.appsup-body .tm-cover-stage {
+  display: flex; align-items: center; gap: 22px;
+  padding: 18px 18px 20px;
+}
+
+/* The ring. One conic sweep for the covered share over a dim track, with the
+   figure punched out of the middle by a radial disc. Drawn in CSS rather than
+   SVG so it inherits the hero's colours and needs no script. */
+.npg-ui.appsup-body .tm-dial {
+  --dial: #58d3a9;
+  position: relative; flex: none;
+  width: 104px; height: 104px; border-radius: 50%;
+  display: grid; place-items: center; text-align: center;
+  background:
+    radial-gradient(closest-side, rgba(12,22,22,.92) 71%, transparent 72% 100%),
+    conic-gradient(var(--dial) calc(var(--pct) * 1%), rgba(255,255,255,.10) 0);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.10), 0 10px 26px rgba(4,10,9,.30);
+}
+.npg-ui.appsup-body .tm-dial.is-warn { --dial: #e9b872; }
+.npg-ui.appsup-body .tm-dial.is-bad  { --dial: #ef8b7c; }
+.npg-ui.appsup-body .tm-dial b {
+  display: block; color: #fff; font-size: 25px; font-weight: 600;
+  letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.npg-ui.appsup-body .tm-dial b i { font-style: normal; font-size: 13px; margin-left: 1px; color: #b9cdc7; }
+/* The caption sits BELOW the ring, not inside it: the punched-out hole is
+   sized for one line of figure, and a second line overprinted the sweep. */
+.npg-ui.appsup-body .tm-dial-wrap {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.npg-ui.appsup-body .tm-dial-wrap > small {
+  font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: #9fb3ad;
+}
+
+/* The split. Three rows, each a dot, a label and a figure hard right - the
+   figures form a column so they can be compared without reading the labels. */
+.npg-ui.appsup-body .tm-cover-split { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; }
+.npg-ui.appsup-body .tm-cover-split li {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 0; font-size: 11.5px; color: #c5d0ce; white-space: nowrap;
+}
+.npg-ui.appsup-body .tm-cover-split li + li { border-top: 1px solid rgba(255,255,255,.09); }
+.npg-ui.appsup-body .tm-cover-split b {
+  margin-left: auto; color: #fff; font-size: 14px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.npg-ui.appsup-body .tm-cover-split .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.npg-ui.appsup-body .tm-cover-split .ok   .dot { background: #58d3a9; box-shadow: 0 0 0 3px rgba(88,211,169,.13); }
+.npg-ui.appsup-body .tm-cover-split .warn .dot { background: #e9b872; box-shadow: 0 0 0 3px rgba(233,184,114,.13); }
+.npg-ui.appsup-body .tm-cover-split .bad  .dot { background: #ef8b7c; box-shadow: 0 0 0 3px rgba(239,139,124,.13); }
+
+/* --- toolbar -------------------------------------------------------------- */
+
+.npg-ui.appsup-body .tm-toolbar { margin-bottom: 22px; }
+.npg-ui.appsup-body .tm-toolbar-ic {
+  display: grid; place-items: center; flex: none;
+  width: 30px; height: 30px; border-radius: 8px;
+  color: var(--support); background: var(--support-soft);
+}
+.npg-ui.appsup-body .tm-toolbar .toolbar-select {
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.npg-ui.appsup-body .tm-toolbar .toolbar-select select { min-width: 210px; max-width: 260px; font-size: 12.5px; }
+.npg-ui.appsup-body .tm-toolbar-hint { font-size: 12px; color: var(--ink-4); }
+.npg-ui.appsup-body .tm-toolbar-state {
+  display: inline-flex; align-items: center; gap: 7px; margin-left: auto;
+  font-size: 11.5px; font-weight: 600; color: var(--support-deep);
+}
+
+/* --- metric tiles: the two risk tiles carry their state ------------------- */
+
+/* The module's portfolio tiles assign a decorative hue by POSITION. Two of
+   these four are RISK figures, so on this page position gives way to meaning:
+   amber while somebody is a single point of failure, red while an application
+   has nobody at all, green when that count is zero. The figure is coloured
+   with the tile - it is the thing being reported. */
+.npg-ui.appsup-body .tm-metrics .metric.is-warn { --metric-tone: var(--tm-warn); }
+.npg-ui.appsup-body .tm-metrics .metric.is-bad  { --metric-tone: var(--tm-bad); }
+.npg-ui.appsup-body .tm-metrics .metric.is-good { --metric-tone: var(--tm-ok); }
+.npg-ui.appsup-body .tm-metrics .metric:is(.is-warn, .is-bad, .is-good) {
+  border-color: color-mix(in srgb, var(--metric-tone) 26%, var(--line));
+  border-bottom-color: color-mix(in srgb, var(--metric-tone) 32%, var(--line-b));
+}
+.npg-ui.appsup-body .tm-metrics .metric:is(.is-warn, .is-bad) .metric-value { color: var(--metric-tone); }
+
+/* --- sections ------------------------------------------------------------- */
+
+.npg-ui.appsup-body .tm-section { margin-top: 34px; }
+.npg-ui.appsup-body .tm-section .section-heading { align-items: flex-start; }
+.npg-ui.appsup-body .tm-sec-ic {
+  display: grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 9px; font-size: 13px;
+  color: var(--support); background: linear-gradient(145deg, #f5fffc, #e6f5f0);
+  box-shadow: inset 0 0 0 1px var(--support-line), 0 3px 8px rgba(24,119,101,.12);
+}
+.npg-ui.appsup-body .tm-section .card + .card { margin-top: 16px; }
+.npg-ui.appsup-body .tm-cap {
+  margin-left: 4px; padding: 2px 8px; border-radius: 20px;
+  font-size: 10px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--ink-3); background: #eef2f7;
+}
+.npg-ui.appsup-body .tm-section .card-head { display: flex; align-items: baseline; gap: 12px; }
+.npg-ui.appsup-body .tm-section .card-sub { margin-left: auto; white-space: nowrap; }
+
+/* --- charts --------------------------------------------------------------- */
+
+.npg-ui.appsup-body .tm-chart-body { height: 360px; }
+.npg-ui.appsup-body .tm-chart-empty { padding: 36px 8px; text-align: center; color: var(--ink-4); font-size: 13px; }
+
+/* --- tables --------------------------------------------------------------- */
+
+.npg-ui.appsup-body .tm-scroll { max-height: 560px; overflow: auto; }
+.npg-ui.appsup-body .tm-tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.npg-ui.appsup-body .tm-tbl th,
+.npg-ui.appsup-body .tm-tbl td {
+  padding: 14px 18px; text-align: left; vertical-align: top;
+  line-height: 1.5; overflow-wrap: break-word;
+  border-bottom: 1px solid var(--line);
+}
+/* The header is sticky over a scrolling body, so it needs a solid fill of its
+   own - a translucent one lets the first row show through as it passes. */
+.npg-ui.appsup-body .tm-tbl thead th {
+  position: sticky; top: 0; z-index: 2;
+  padding-block: 11px;
+  background: #f6f8fa;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .075em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line-2);
+  white-space: nowrap;
+}
+.npg-ui.appsup-body .tm-tbl tbody tr { transition: background .12s ease; }
+.npg-ui.appsup-body .tm-tbl tbody tr:hover { background: #f7fbfa; }
+.npg-ui.appsup-body .tm-tbl tbody tr:last-child td { border-bottom: none; }
+.npg-ui.appsup-body .tm-tbl :is(th, td).num { text-align: right; }
+.npg-ui.appsup-body .tm-tbl :is(th, td).rank {
+  text-align: center; color: var(--ink-4);
+  font-variant-numeric: tabular-nums; font-size: 12px;
+}
+.npg-ui.appsup-body .tm-name { font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
+.npg-ui.appsup-body .tm-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 3px; line-height: 1.45; }
+.npg-ui.appsup-body .tm-app-meta { margin-top: 6px; }
+
+/* The person cell. */
+.npg-ui.appsup-body .tm-person { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+.npg-ui.appsup-body .tm-person-id { min-width: 0; }
+.npg-ui.appsup-body .tm-av {
+  display: grid; place-items: center; flex: none;
+  width: 34px; height: 34px; border-radius: 50%;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  color: hsl(var(--av-h) 52% 27%);
+  background: linear-gradient(150deg, hsl(var(--av-h) 58% 93%), hsl(var(--av-h) 50% 87%));
+  box-shadow: inset 0 0 0 1px hsl(var(--av-h) 40% 80%), 0 1px 2px rgba(20,22,28,.07);
+}
+
+/* Workload: the figure, then its length. Right-aligned with the number it
+   belongs to, so the bars share one edge and can be read as a ranking. */
+.npg-ui.appsup-body .tm-load { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.npg-ui.appsup-body .tm-count { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 15px; color: var(--ink); }
+.npg-ui.appsup-body .tm-meter {
+  display: block; width: 100%; max-width: 120px; height: 5px;
+  border-radius: 3px; background: var(--line); overflow: hidden;
+}
+.npg-ui.appsup-body .tm-meter > span {
+  display: block; height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--support) 55%, #fff), var(--support));
+}
+
+/* Coverage: three pips, because past three people the exact count stops
+   changing the decision and the number is already beside them. */
+.npg-ui.appsup-body .tm-cov { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.npg-ui.appsup-body .tm-pips { display: inline-flex; gap: 3px; }
+.npg-ui.appsup-body .tm-pips i {
+  width: 6px; height: 14px; border-radius: 2px;
+  background: var(--line); font-style: normal;
+}
+.npg-ui.appsup-body .tm-pips i.on { background: var(--support); }
+.npg-ui.appsup-body .tm-risk-warn .tm-pips i.on { background: var(--tm-warn); }
+.npg-ui.appsup-body .tm-risk-warn .tm-count { color: var(--tm-warn); }
+.npg-ui.appsup-body .tm-risk-bad  .tm-count { color: var(--tm-bad); }
+.npg-ui.appsup-body .tm-flag {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 7px;
+  padding: 2px 8px; border-radius: 20px;
+  font-size: 10.5px; font-weight: 600; white-space: nowrap;
+}
+.npg-ui.appsup-body .tm-flag.warn { color: var(--tm-warn); background: var(--warn-tint); }
+.npg-ui.appsup-body .tm-flag.bad  { color: var(--tm-bad);  background: var(--stop-tint); }
+
+/* Chips and the overflow disclosure. */
+.npg-ui.appsup-body .tm-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.npg-ui.appsup-body .tm-chip {
+  display: inline-block; padding: 3px 10px; border-radius: 20px;
+  font-size: 11.5px; color: var(--ink-2); background: #eef2f7;
+  box-shadow: inset 0 0 0 1px rgba(20,22,28,.03);
+  white-space: nowrap;
+}
+.npg-ui.appsup-body .tm-more { display: inline-block; }
+.npg-ui.appsup-body .tm-more > summary {
+  display: inline-block; cursor: pointer; list-style: none;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 600; color: var(--support-deep);
+  background: var(--support-soft);
+  box-shadow: inset 0 0 0 1px var(--support-line);
+}
+.npg-ui.appsup-body .tm-more > summary::-webkit-details-marker { display: none; }
+.npg-ui.appsup-body .tm-more > summary:hover { background: #dff0ea; }
+.npg-ui.appsup-body .tm-more[open] > summary { margin-bottom: 6px; }
+.npg-ui.appsup-body .tm-more .tm-chips { width: 100%; }
+
+@media (max-width: 1100px) {
+  .npg-ui.appsup-body .tm-cover-stage { flex-direction: column; align-items: stretch; gap: 14px; }
+  .npg-ui.appsup-body .tm-dial { align-self: center; }
+}
+
+/* ===========================================================================
+   SCOPED MODULE BAR  (application detail)
+   ---------------------------------------------------------------------------
+   The module bar has two modes. In module mode it names the module and lists
+   the module's sections. In SCOPED mode - a page that has descended into one
+   record - it names the RECORD and lists that record's own sections, with a
+   labelled way back to the collection it came from.
+
+   The swap is what stops accidental context loss. A row sitting directly
+   above the content reads as "sections of the thing on screen" whatever it
+   actually links to, so while you are inside an application it must not be
+   offering Architecture or Data quality.
+
+   sup_tools.css is shared with Software Inventory and Utility, so every rule
+   here is scoped to `.appsup`, which only this module's body carries.
+   =========================================================================== */
+
+.npg-ui.appsup .npg-modbar.is-scoped { gap: 12px; }
+/* The record's sections ride with the reader. Without this the strip scrolled
+   away with the hero, so every switch meant scrolling up to pick a section and
+   back down past the application summary to read it. Pinned just under the
+   top bar (--aa-nav-h is measured by _chrome_topnav.html); z-index 20 from
+   npg_shell.css keeps it above page content and below that bar (1080). */
+.npg-ui.appsup .npg-modbar.is-scoped {
+  position: sticky;
+  top: calc(var(--aa-nav-h, 67px) + 8px);
+}
+/* Compact hero on every section but Overview: the summary, remarks, badges
+   and audit line are Overview content, so elsewhere only the name and the
+   Download / Manage actions stay. */
+.npg-ui.appsup .detail-hero.is-compact {
+  padding: 14px 20px; margin-bottom: 16px; align-items: center;
+}
+.npg-ui.appsup .detail-hero.is-compact :is(.meta-row, .descr, .audit-line) { display: none; }
+.npg-ui.appsup .detail-hero.is-compact h1 { margin: 0; font-size: 18px; }
+.npg-ui.appsup .detail-hero.is-compact .detail-hero-right {
+  flex-direction: row; align-items: center;
+}
+.npg-ui.appsup .detail-hero.is-compact .detail-hero-right .row { margin-top: 0; }
+/* A switched-to section scrolls its top to just under the pinned strip. */
+.npg-ui.appsup .tab-panel[data-tabgroup="detail"] {
+  scroll-margin-top: calc(var(--aa-nav-h, 67px) + 76px);
+}
+/* The bar carries a short accent mark at its bottom-left (npg_shell.css). In
+   scoped mode the ACTIVE SECTION owns the underline, and a second mark under
+   the back button reads as a second active tab. One underline per bar. */
+.npg-ui.appsup .npg-modbar.is-scoped::after { content: none; }
+
+/* ------------------------------------------------------------ back to parent */
+.npg-ui.appsup .npg-modbar-back {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  max-width: 240px;
+  margin-bottom: 12px; padding: 7px 11px 7px 8px;
+  border: 1px solid var(--line, #d3dbe7); border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff, #f7f9fc);
+  font-size: 12.5px; font-weight: 500; color: var(--ink-3, #5a6478);
+  text-decoration: none; white-space: nowrap;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.npg-ui.appsup .npg-modbar-back:hover {
+  color: var(--mod-ink, #8a1538);
+  border-color: color-mix(in srgb, var(--mod, #ab1236) 38%, #ffffff);
+  background: #ffffff;
+}
+.npg-ui.appsup .npg-modbar-back:focus-visible {
+  outline: 2px solid var(--mod, #ab1236); outline-offset: 2px;
+}
+.npg-ui.appsup .npg-modbar-back svg { flex-shrink: 0; opacity: .8; }
+/* Tower names run long - let the label truncate rather than push the strip. */
+.npg-ui.appsup .npg-modbar-back span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Hairline between "where I came from" and "what I can do here". It rides on
+   the strip because the bar no longer carries a record identity between the
+   two - the trail above and the page heading below already name the
+   application and its BC tier, and a third copy was costing the sections
+   their width. */
+.npg-ui.appsup .npg-modbar.is-scoped #appDetailTabs {
+  padding-left: 14px;
+  border-left: 1px solid var(--line, #d3dbe7);
+}
+
+/* ------------------------------------------- record sections inside the bar */
+/*
+   The application's tab strip moves INTO the bar, so there is exactly one row
+   of sections on the page instead of two competing ones. appsupport.js finds
+   tabs and panels through the document rather than a shared container, so the
+   controller, the panels and the keyboard support are untouched - only the
+   home and the skin changed.
+*/
+.npg-ui.appsup .npg-modbar #appDetailTabs {
+  display: flex; flex-wrap: nowrap; align-items: stretch;
+  margin: 0 auto 0 0; padding: 0; gap: 0;
+  min-width: 0; border: 0; background: none;
+  overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+}
+/*
+   A clipped label should read as "there is more", not as a bug - but ONLY
+   when something is actually clipped. The fade used to be unconditional, so
+   on a strip that fitted, the last section sat there looking disabled. The
+   class is set from script, because CSS cannot ask whether a box overflows.
+*/
+.npg-ui.appsup .npg-modbar #appDetailTabs.is-scrollable {
+  mask-image: linear-gradient(90deg, #000 92%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent);
+}
+.npg-ui.appsup .npg-modbar #appDetailTabs::-webkit-scrollbar { display: none; }
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 0; padding: 10px 10px 12px; margin-bottom: -1px;
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: none; box-shadow: none;
+  font-size: 13px; font-weight: 500; color: var(--ink-3, #5a6478);
+  white-space: nowrap; cursor: pointer;
+  transition: color .15s ease;
+}
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab:hover { color: var(--ink, #10131a); }
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab.active {
+  color: var(--mod-ink, #8a1538); font-weight: 600;
+  background: none;
+  border-bottom-color: var(--mod, #ab1236);
+  text-shadow: 0 0 .4px currentColor;
+}
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab:focus-visible {
+  outline: 2px solid var(--mod, #ab1236); outline-offset: -3px; border-radius: 5px;
+}
+/* Icons off inside the bar. The module-mode section links carry none either,
+   so this keeps the two modes reading as one control - and it buys back the
+   width that would otherwise push the last sections behind the fade. */
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab > i { display: none; }
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab .tab-count {
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--sunken, #eef1f6); color: var(--ink-3, #5a6478);
+  font-size: 10.5px; font-weight: 600; line-height: 1.5;
+}
+.npg-ui.appsup .npg-modbar #appDetailTabs .tab.active .tab-count {
+  background: color-mix(in srgb, var(--mod, #ab1236) 12%, #ffffff);
+  color: var(--mod-ink, #8a1538);
+}
+
+@media (max-width: 1100px) {
+  /* Tower names run long and the way back matters less than the sections, so
+     the back label is the first thing to yield width. */
+  .npg-ui.appsup .npg-modbar-back { max-width: 150px; }
+}
+@media (max-width: 860px) {
+  .npg-ui.appsup .npg-modbar.is-scoped { flex-wrap: wrap; gap: 0 12px; }
+  .npg-ui.appsup .npg-modbar #appDetailTabs {
+    order: 3; width: 100%; margin-right: 0;
+    padding-left: 0; border-left: 0;   /* on its own row the hairline is noise */
+  }
+  .npg-ui.appsup .npg-modbar-back span { display: none; }   /* icon only */
+  .npg-ui.appsup .npg-modbar-back { padding: 7px 8px; max-width: none; }
+}
+
+/* ===========================================================================
+   BREADCRUMB: the record crumb is a SWITCHER
+   ---------------------------------------------------------------------------
+   A breadcrumb nobody clicks is decoration. Hanging the tower's other
+   applications off the record crumb turns it into the fastest
+   application-to-application move in the module - shorter than going back out
+   to the tower list - and that is what gets the trail read at all.
+
+   Built on <details>/<summary>, which this module already uses for its Manage
+   menu because it loads no Bootstrap; npg_menu.js adds close-on-outside-click
+   and Escape.
+   =========================================================================== */
+
+.npg-ui.appsup .npg-crumbs { gap: 6px; font-size: 12.5px; }
+/* Crumb links were a 12px target in a 7px gap. Give them a real hit area. */
+.npg-ui.appsup .npg-crumbs > a {
+  padding: 3px 5px; margin: -3px -1px; border-radius: 6px;
+}
+.npg-ui.appsup .npg-crumbs > a:hover {
+  background: var(--sunken, #eef1f6); text-decoration: none;
+}
+
+.npg-ui.appsup .npg-crumb-switch > summary {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 6px; border-radius: 6px; cursor: pointer;
+  color: var(--ink-2, #333e52); font-weight: 500;
+}
+.npg-ui.appsup .npg-crumb-switch > summary:hover {
+  background: var(--sunken, #eef1f6); color: var(--ink, #10131a);
+}
+.npg-ui.appsup .npg-crumb-switch > summary:focus-visible {
+  outline: 2px solid var(--mod, #ab1236); outline-offset: 1px;
+}
+.npg-ui.appsup .npg-crumb-switch .npg-crumb-switch-name {
+  display: inline-block; max-width: 34ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
+}
+.npg-ui.appsup .npg-crumb-switch .npg-menu-caret { opacity: .6; }
+
+/* Anchor the list to the crumb (the shell's menus hang off right-aligned
+   toolbar buttons; a breadcrumb reads left to right). */
+.npg-ui.appsup .npg-crumb-switch .npg-menu-list {
+  left: 0; right: auto; min-width: 300px; max-height: 360px; overflow-y: auto;
+}
+.npg-ui.appsup .npg-crumb-switch .npg-menu-head {
+  padding: 5px 10px 7px; font-size: 10px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-4, #79839a);
+}
+.npg-ui.appsup .npg-crumb-switch .npg-menu-list a {
+  display: flex; align-items: center; gap: 9px;
+  white-space: normal; line-height: 1.35;
+}
+.npg-ui.appsup .npg-crumb-switch .npg-menu-list a .bc-pill {
+  flex-shrink: 0; font-size: 9.5px; padding: 2px 5px;
+}
+.npg-ui.appsup .npg-crumb-switch .npg-menu-list a.is-active {
+  background: color-mix(in srgb, var(--mod, #ab1236) 16%, #ffffff);
+  color: var(--mod-ink, #8a1538);
+}
+.npg-ui.appsup .npg-crumb-switch .npg-menu-list .npg-menu-all {
+  font-weight: 600; color: var(--mod-ink, #8a1538);
+}
+
+@media (max-width: 640px) {
+  .npg-ui.appsup .npg-crumb-switch .npg-crumb-switch-name { max-width: 16ch; }
+}
+
+/* ===========================================================================
+   MANAGE TOWER MEMBERS
+   ---------------------------------------------------------------------------
+   What was wrong on a 14" screen, and why it is a layout problem rather than
+   a wrapping one.
+
+   The table carried six columns, three of which are buttons whose width is
+   fixed by their label ("Manage passwords", "View only", "Remove"). Those
+   three claim ~365px whatever the screen, and the 320px permissions aside
+   claims its share before the table sees any. On a 1366px laptop that left
+   the table 660px, so User, Email and Added shared about 300px between them -
+   and appsupport.css's `.tbl td { overflow-wrap: anywhere }` then broke every
+   value at whatever character the column ended on. Names and addresses came
+   out as vertical strips: "mem / ber / test", "member@exam / ple.com".
+
+   `anywhere` is also why they never scrolled instead. It drops a cell's
+   min-content width to a single character, so the table can always shrink to
+   fit and the `overflow-x: auto` on `.card-body:has(> .tbl)` - which exists
+   precisely so a wide table scrolls rather than deforms - can never fire.
+   Both are overridden below for this page only; the module-wide rule is left
+   alone because it reaches ten other templates.
+
+   The structural fix is in the template: the email moved into the identity
+   cell, which takes the column count to five and gives the identity real
+   width. These rules keep it that way.
+   =========================================================================== */
+
+/* Flex-wrap, not a grid with a media query, and deliberately so.
+
+   The question this layout has to answer is "is there room for both", and the
+   only honest input is the width actually available - which is the viewport
+   minus the module rail, minus the content padding, and the rail collapses.
+   Any breakpoint written in viewport pixels is therefore a guess about three
+   other numbers, and the guess has to be re-made every time one of them
+   moves. Two flex-basis values state the requirement instead: the list needs
+   900px to show five columns without clipping the Remove button, the aside
+   wants 320px, and below their sum the aside simply wraps underneath. It is
+   reference material, so reading it below the list costs nothing.
+
+   Side by side from ~1236px of CONTENT width (about a 1600px viewport with
+   the rail open); stacked on every 1280/1366/1512 laptop, which is where the
+   report came from. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-layout > .col {
+  flex: 1 1 900px;
+  min-width: 0;
+}
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-aside {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+/* The permission bullets are sentences and read fine at any width, but the
+   summary is label/value pairs held apart by space-between - stretched to a
+   full-width card they end up at opposite ends of the screen with nothing
+   between them, which is not a pair any more. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-summary {
+  max-width: 420px;
+}
+
+/* Break long values at word boundaries, never mid-token. An email is one
+   token, so this also gives the column a real minimum and lets the card
+   scroll if the viewport ever gets narrow enough to need it. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .tbl td {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-member {
+  min-width: 240px;
+}
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-who {
+  min-width: 0;
+  line-height: 1.45;
+}
+/* The Lead badge rides with the name rather than after the stack, so a member
+   who leads does not push the identity column wider than the others. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-who .badge {
+  margin-left: 6px;
+  white-space: nowrap;
+}
+/* The email is the one deliberate exception to the rule above: it may break
+   mid-token, so that a single 40-character address cannot widen the identity
+   column for every other row. It is safe here only because the cell carries a
+   240px floor - that floor is what stops `anywhere` collapsing it to a strip,
+   which is the whole failure this block exists to fix. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-email {
+  overflow-wrap: anywhere;
+}
+/* A date is never worth wrapping - "2026-" over "09-13" cost a line and read
+   as two values. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .twm-date {
+  white-space: nowrap;
+}
+/* The three action columns hold one button each; letting their labels wrap
+   was the other half of the squeeze. */
+.npg-ui.appsup-body[data-as-page="application_support.manage_tower_members"] .tbl td .btn {
+  white-space: nowrap;
+}
