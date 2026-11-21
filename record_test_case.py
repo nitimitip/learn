@@ -1674,7 +1674,7 @@ def validate_with_portal(recorder):
 # --------------------------------------------------------------------------
 # Browser start-up and the recording loop
 # --------------------------------------------------------------------------
-def launch(playwright, browser_name, headless, context_options=None, profile_dir=None):
+def launch(playwright, browser_name, headless, windows_auth, context_options=None, profile_dir=None):
     """Returns (browser, context). With profile_dir the context is a normal
     (not private) browser profile in that folder and browser is None.
 
@@ -1683,6 +1683,8 @@ def launch(playwright, browser_name, headless, context_options=None, profile_dir
     browser.new_context() is a private window. The site then asks for the
     Windows Security pop-up, which Playwright cancels: the page shows 401."""
     args = ["--start-maximized"]
+    if windows_auth:
+        args += [f"--auth-server-allowlist={windows_auth}", f"--auth-negotiate-delegate-allowlist={windows_auth}"]
     order = [browser_name] + [b for b in ("msedge", "chrome", "chromium") if b != browser_name]
     last_error = None
     for name in order:
@@ -1708,6 +1710,7 @@ def launch(playwright, browser_name, headless, context_options=None, profile_dir
 
 
 AUTH_CHALLENGE_WAIT = 4  # seconds a page may stay on a sign-in challenge before the recording stops
+NO_SILENT_SIGNIN = "qa-no-silent-signin.invalid"  # allowlist that matches no host
 
 
 def auth_blocked_lines(challenge):
@@ -1724,7 +1727,7 @@ def auth_blocked_lines(challenge):
             "in the pop-up, and press Start recording again."]
 
 
-def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=False,
+def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=False, windows_auth="",
            on_ready=None, http_credentials=None):
     """Record until Finish is pressed or the browser is closed (or on_ready returns).
     on_ready(page) is for tests. http_credentials answers the browser's own sign-in
@@ -1736,10 +1739,14 @@ def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=
     profile_dir = None
     if http_credentials:
         options["http_credentials"] = http_credentials
+        # Silent sign-in off: otherwise Edge signs in to intranet sites as the
+        # logged-in Windows account and never asks for the typed one (prod
+        # 2026-11-21: QPID showed UnauthorizedAccess.aspx for the PC's account).
+        windows_auth = NO_SILENT_SIGNIN
     else:
         profile_dir = tempfile.mkdtemp(prefix="qa_recorder_profile_")
     with sync_playwright() as playwright:
-        browser, context = launch(playwright, browser_name, headless, options, profile_dir)
+        browser, context = launch(playwright, browser_name, headless, windows_auth, options, profile_dir)
         stop = lambda _x=None: setattr(recorder, "stopped", True)  # noqa: E731
         if browser is not None:
             browser.on("disconnected", stop)
@@ -1968,12 +1975,11 @@ def run_recording(settings, client=None, app_id=None):
         teardown=settings.get("teardown", ""), start_paused=settings.get("start_paused", False))
     credentials = None
     if settings.get("auth_user") and settings.get("auth_password"):
-        domain = (settings.get("auth_domain") or "").strip().rstrip("\\")
+        domain = (settings.get("auth_domain") or "").strip()
         user = settings["auth_user"].strip()
-        username = f"{domain}\\{user}" if (domain and "\\" not in user and "@" not in user) else user
-        credentials = {"username": username, "password": settings["auth_password"]}
+        credentials = {"username": f"{domain}\\{user}" if domain else user, "password": settings["auth_password"]}
     record(recorder, settings.get("browser", "msedge"), ignore_https_errors=settings.get("ignore_https", False),
-           http_credentials=credentials)
+           windows_auth=settings.get("windows_auth", ""), http_credentials=credentials)
 
     if recorder.auth_blocked:
         return 1, auth_blocked_lines(recorder.auth_blocked) + ["Nothing was sent to the portal."]
@@ -2148,6 +2154,8 @@ def start_window(remembered, session):
             "url": address, "name": name.get().strip(), "overwrite": overwrite.get(),
             "start_paused": start_paused.get(), "auth_domain": auth_domain.get().strip(),
             "auth_user": auth_user.get().strip(), "auth_password": auth_password.get(),
+            # Same as the portal runner: let the browser do NTLM/Kerberos with this host.
+            "windows_auth": urlsplit(address).hostname or "",
             "browser": browser.get() or "msedge", "ignore_https": ignore_https.get(), "block": block.get(),
             "depends_on": depends_on.get().strip(), "teardown": teardown.get().strip(),
             "portal": portal.get().strip(), "portal_user": portal_user.get().strip(),
@@ -2210,6 +2218,8 @@ def main(argv=None):
                                                      "(default: tools_config.ini next to this script)")
     parser.add_argument("--browser", default="msedge", choices=["msedge", "chrome", "chromium"],
                         help="Installed browser to use (default msedge)")
+    parser.add_argument("--windows-auth", default="", metavar="HOSTS",
+                        help="Allow Windows sign-in (NTLM/Kerberos) to these hosts, e.g. *.corp.local")
     parser.add_argument("--auth-user", default="", metavar="USER",
                         help="User name for the browser's own sign-in prompt; the password is asked for")
     parser.add_argument("--auth-domain", default="", metavar="DOMAIN", help="Windows domain of --auth-user")
@@ -2273,7 +2283,7 @@ def main(argv=None):
     print(CONTROLS_HELP)
     code, lines = run_recording({
         "url": url, "name": name, "description": args.description, "out": args.out, "config": args.config,
-        "browser": args.browser, "ignore_https": args.ignore_https_errors,
+        "browser": args.browser, "windows_auth": args.windows_auth, "ignore_https": args.ignore_https_errors,
         "keep_username": args.keep_typed_username, "absolute_urls": args.absolute_urls, "block": args.block,
         "depends_on": args.depends_on, "teardown": args.teardown, "start_paused": args.start_paused,
         "auth_user": args.auth_user, "auth_domain": args.auth_domain, "auth_password": auth_password,
