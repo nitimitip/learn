@@ -48,8 +48,10 @@ import http.cookiejar
 import json
 import os
 import re
+import shutil
 import ssl
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -1672,10 +1674,15 @@ def validate_with_portal(recorder):
 # --------------------------------------------------------------------------
 # Browser start-up and the recording loop
 # --------------------------------------------------------------------------
-def launch(playwright, browser_name, headless, windows_auth):
+def launch(playwright, browser_name, headless, context_options=None, profile_dir=None):
+    """Returns (browser, context). With profile_dir the context is a normal
+    (not private) browser profile in that folder and browser is None.
+
+    Why a normal profile: Edge/Chrome never sign in with the logged-in Windows
+    account (Kerberos/NTLM single sign-on) in a private window, and every
+    browser.new_context() is a private window. The site then asks for the
+    Windows Security pop-up, which Playwright cancels: the page shows 401."""
     args = ["--start-maximized"]
-    if windows_auth:
-        args += [f"--auth-server-allowlist={windows_auth}", f"--auth-negotiate-delegate-allowlist={windows_auth}"]
     order = [browser_name] + [b for b in ("msedge", "chrome", "chromium") if b != browser_name]
     last_error = None
     for name in order:
@@ -1683,10 +1690,18 @@ def launch(playwright, browser_name, headless, windows_auth):
             options = {"headless": headless, "args": args}
             if name != "chromium":
                 options["channel"] = name
-            browser = playwright.chromium.launch(**options)
+            if profile_dir:
+                context = playwright.chromium.launch_persistent_context(
+                    str(profile_dir), **options, **(context_options or {}))
+                browser = None
+            else:
+                browser = playwright.chromium.launch(**options)
+                context = None
             if name != browser_name:
                 print(f"{browser_name} could not start; using {name} instead.")
-            return browser
+            if browser is not None and context_options is not None:
+                context = browser.new_context(**context_options)
+            return browser, context
         except PlaywrightError as exc:
             last_error = exc
     raise SystemExit(f"No browser could be started: {last_error}")
@@ -1699,30 +1714,37 @@ def auth_blocked_lines(challenge):
     """What the tester is told when the site's Windows/basic sign-in stopped the recording."""
     host, scheme = challenge["host"], challenge["scheme"]
     if challenge["with_credentials"]:
-        return [f"{host} did not accept the Windows sign-in ({scheme}).",
-                "Check Domain, User name and Password in section 3 (Windows sign-in) and record again.",
-                "Tip: open the site in a normal Edge window with the same user name to rule out a locked "
-                "or expired account."]
-    return [f"{host} asks for a Windows sign-in ({scheme}).",
-            "The recording browser cannot show that pop-up, so the page stayed blank.",
+        return [f"{host} did not accept the Windows sign-in ({scheme}) typed in section 3.",
+                "Check Domain (for example VOLT), User name and Password, and record again.",
+                "If a normal Edge window opens the site without asking, leave section 3 EMPTY: "
+                "the recorder then signs in with your Windows login."]
+    return [f"{host} asks for a Windows sign-in ({scheme}) and your Windows login was not accepted.",
+            "The recording browser cannot show the Windows Security pop-up.",
             "Fill section 3 (Windows sign-in): Domain, User name and Password, the same ones you type "
-            "in the pop-up, and press Start recording again.",
-            "For replays, set the application's sign-in to On-prem AD with the same account in the portal."]
+            "in the pop-up, and press Start recording again."]
 
 
-def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=False, windows_auth="",
+def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=False,
            on_ready=None, http_credentials=None):
     """Record until Finish is pressed or the browser is closed (or on_ready returns).
     on_ready(page) is for tests. http_credentials answers the browser's own sign-in
-    prompt: {"username": "DOMAIN\\user", "password": "..."}."""
+    prompt: {"username": "DOMAIN\\user", "password": "..."}. Without them the
+    browser runs on a fresh normal profile so it signs in with the logged-in
+    Windows account, as a normal Edge window does; the profile is deleted after."""
+    options = {"no_viewport": not headless, "ignore_https_errors": ignore_https_errors,
+               "accept_downloads": True}
+    profile_dir = None
+    if http_credentials:
+        options["http_credentials"] = http_credentials
+    else:
+        profile_dir = tempfile.mkdtemp(prefix="qa_recorder_profile_")
     with sync_playwright() as playwright:
-        browser = launch(playwright, browser_name, headless, windows_auth)
-        browser.on("disconnected", lambda _b=None: setattr(recorder, "stopped", True))
-        options = {"no_viewport": not headless, "ignore_https_errors": ignore_https_errors,
-                   "accept_downloads": True}
-        if http_credentials:
-            options["http_credentials"] = http_credentials
-        context = browser.new_context(**options)
+        browser, context = launch(playwright, browser_name, headless, options, profile_dir)
+        stop = lambda _x=None: setattr(recorder, "stopped", True)  # noqa: E731
+        if browser is not None:
+            browser.on("disconnected", stop)
+        else:
+            context.on("close", stop)
 
         def on_response(response):
             # Local properties only (no Playwright round trip inside an event handler).
@@ -1748,7 +1770,14 @@ def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=
         context.expose_binding("__qaRecord", recorder.on_event)
         context.add_init_script(RECORDER_JS)
         context.on("page", recorder.on_page)
-        page = context.new_page()
+        existing = [p for p in context.pages if not p.is_closed()]
+        if existing:  # a normal profile opens with one blank tab: record in that one
+            page = existing[0]
+            recorder.on_page(page)
+            for extra in existing[1:]:
+                extra.close()
+        else:
+            page = context.new_page()
         recorder.main = recorder.current = page
         recorder.windows = [page]
         recorder.add("NAVIGATE", input_data=recorder._relative(recorder.start_url),
@@ -1798,9 +1827,12 @@ def record(recorder, browser_name="msedge", headless=False, ignore_https_errors=
                 pass
             recorder.save()
             try:
-                browser.close()
+                (browser or context).close()
             except Exception:
                 pass
+    if profile_dir:
+        # Nothing of the recording session (cookies, cache) is kept for the next one.
+        shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 # --------------------------------------------------------------------------
@@ -1936,11 +1968,12 @@ def run_recording(settings, client=None, app_id=None):
         teardown=settings.get("teardown", ""), start_paused=settings.get("start_paused", False))
     credentials = None
     if settings.get("auth_user") and settings.get("auth_password"):
-        domain = (settings.get("auth_domain") or "").strip()
+        domain = (settings.get("auth_domain") or "").strip().rstrip("\\")
         user = settings["auth_user"].strip()
-        credentials = {"username": f"{domain}\\{user}" if domain else user, "password": settings["auth_password"]}
+        username = f"{domain}\\{user}" if (domain and "\\" not in user and "@" not in user) else user
+        credentials = {"username": username, "password": settings["auth_password"]}
     record(recorder, settings.get("browser", "msedge"), ignore_https_errors=settings.get("ignore_https", False),
-           windows_auth=settings.get("windows_auth", ""), http_credentials=credentials)
+           http_credentials=credentials)
 
     if recorder.auth_blocked:
         return 1, auth_blocked_lines(recorder.auth_blocked) + ["Nothing was sent to the portal."]
@@ -2079,7 +2112,7 @@ def start_window(remembered, session):
                     text="Start paused: I will sign in first, then press Resume on the toolbar").grid(
         row=3, column=0, columnspan=2, sticky="w", **pad)
 
-    box = ttk.LabelFrame(root, text="3. Windows sign-in (only if the browser asks for a user name and password)")
+    box = ttk.LabelFrame(root, text="3. Windows sign-in (leave EMPTY to sign in with your Windows login)")
     box.grid(row=2, column=0, sticky="we", padx=10, pady=4)
     row(box, 0, "Domain", auth_domain)
     row(box, 1, "User name", auth_user)
@@ -2115,8 +2148,6 @@ def start_window(remembered, session):
             "url": address, "name": name.get().strip(), "overwrite": overwrite.get(),
             "start_paused": start_paused.get(), "auth_domain": auth_domain.get().strip(),
             "auth_user": auth_user.get().strip(), "auth_password": auth_password.get(),
-            # Same as the portal runner: let the browser do NTLM/Kerberos with this host.
-            "windows_auth": urlsplit(address).hostname or "",
             "browser": browser.get() or "msedge", "ignore_https": ignore_https.get(), "block": block.get(),
             "depends_on": depends_on.get().strip(), "teardown": teardown.get().strip(),
             "portal": portal.get().strip(), "portal_user": portal_user.get().strip(),
@@ -2179,8 +2210,6 @@ def main(argv=None):
                                                      "(default: tools_config.ini next to this script)")
     parser.add_argument("--browser", default="msedge", choices=["msedge", "chrome", "chromium"],
                         help="Installed browser to use (default msedge)")
-    parser.add_argument("--windows-auth", default="", metavar="HOSTS",
-                        help="Allow Windows sign-in (NTLM/Kerberos) to these hosts, e.g. *.corp.local")
     parser.add_argument("--auth-user", default="", metavar="USER",
                         help="User name for the browser's own sign-in prompt; the password is asked for")
     parser.add_argument("--auth-domain", default="", metavar="DOMAIN", help="Windows domain of --auth-user")
@@ -2244,7 +2273,7 @@ def main(argv=None):
     print(CONTROLS_HELP)
     code, lines = run_recording({
         "url": url, "name": name, "description": args.description, "out": args.out, "config": args.config,
-        "browser": args.browser, "windows_auth": args.windows_auth, "ignore_https": args.ignore_https_errors,
+        "browser": args.browser, "ignore_https": args.ignore_https_errors,
         "keep_username": args.keep_typed_username, "absolute_urls": args.absolute_urls, "block": args.block,
         "depends_on": args.depends_on, "teardown": args.teardown, "start_paused": args.start_paused,
         "auth_user": args.auth_user, "auth_domain": args.auth_domain, "auth_password": auth_password,
