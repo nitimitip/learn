@@ -8,7 +8,6 @@ seconds. Paste the printed report back. ASCII only.
 """
 import argparse
 import getpass
-import os
 import shutil
 import ssl
 import sys
@@ -76,90 +75,6 @@ def attempt(playwright, url, label, persistent, credentials, allowlist):
     print(f"  [{verdict}] {label:55} {result}; navigation statuses {statuses[:8]}", flush=True)
 
 
-def start_edge_netonly(domain, user, password, port, profile, allowlist=""):
-    """Start Edge whose NETWORK sign-ins use DOMAIN\\user (like runas /netonly).
-    The password is only checked when a site asks, not here. Returns the
-    process handle (Windows only)."""
-    import ctypes
-    from ctypes import wintypes
-
-    class STARTUPINFO(ctypes.Structure):
-        _fields_ = [("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
-                    ("lpTitle", wintypes.LPWSTR), ("dwX", wintypes.DWORD), ("dwY", wintypes.DWORD),
-                    ("dwXSize", wintypes.DWORD), ("dwYSize", wintypes.DWORD), ("dwXCountChars", wintypes.DWORD),
-                    ("dwYCountChars", wintypes.DWORD), ("dwFillAttribute", wintypes.DWORD),
-                    ("dwFlags", wintypes.DWORD), ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
-                    ("lpReserved2", ctypes.c_void_p), ("hStdInput", wintypes.HANDLE),
-                    ("hStdOutput", wintypes.HANDLE), ("hStdError", wintypes.HANDLE)]
-
-    class PROCESS_INFORMATION(ctypes.Structure):
-        _fields_ = [("hProcess", wintypes.HANDLE), ("hThread", wintypes.HANDLE),
-                    ("dwProcessId", wintypes.DWORD), ("dwThreadId", wintypes.DWORD)]
-
-    edge = shutil.which("msedge") or next(
-        (p for p in (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe") if os.path.isfile(p)), None)
-    if not edge:
-        raise RuntimeError("msedge.exe not found")
-    command = (f'"{edge}" --remote-debugging-port={port} --user-data-dir="{profile}" --no-first-run '
-               f'--no-default-browser-check ')
-    if allowlist:
-        command += f"--auth-server-allowlist={allowlist} --auth-negotiate-delegate-allowlist={allowlist} "
-    command += "about:blank"
-    si, pi = STARTUPINFO(), PROCESS_INFORMATION()
-    si.cb = ctypes.sizeof(si)
-    LOGON_NETCREDENTIALS_ONLY = 2
-    ok = ctypes.windll.advapi32.CreateProcessWithLogonW(
-        user, domain or None, password, LOGON_NETCREDENTIALS_ONLY, None,
-        ctypes.create_unicode_buffer(command), 0, None, None, ctypes.byref(si), ctypes.byref(pi))
-    if not ok:
-        raise ctypes.WinError()
-    ctypes.windll.kernel32.CloseHandle(pi.hThread)
-    return pi.hProcess
-
-
-def attempt_netonly(playwright, url, label, domain, user, password, allowlist):
-    """Edge started as runas /netonly, then attached with connect_over_cdp."""
-    import socket
-    import time
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    profile = tempfile.mkdtemp(prefix="qa_signin_diag_")
-    statuses = []
-    try:
-        start_edge_netonly(domain, user, password, port, profile, allowlist)
-        browser = None
-        for _ in range(60):
-            try:
-                browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-                break
-            except Exception:
-                time.sleep(0.5)
-        if browser is None:
-            raise RuntimeError("Edge did not answer on the debugging port")
-        context = browser.contexts[0]
-        context.on("response", lambda r: statuses.append(r.status) if r.request.is_navigation_request() else None)
-        page = context.pages[0] if context.pages else context.new_page()
-        try:
-            resp = page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(1500)
-            result = f"final HTTP {resp.status if resp else None}, title '{page.title()[:50]}'"
-        except Exception as exc:
-            result = "error: " + str(exc).splitlines()[0][:120]
-        try:
-            browser.new_browser_cdp_session().send("Browser.close")
-        except Exception:
-            pass
-    except Exception as exc:
-        result = "could not start: " + str(exc).splitlines()[0][:120]
-    finally:
-        shutil.rmtree(profile, ignore_errors=True)
-    verdict = "OK " if result.startswith(("final HTTP 2", "final HTTP 3")) else "NO "
-    print(f"  [{verdict}] {label:55} {result}; navigation statuses {statuses[:8]}", flush=True)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
@@ -186,12 +101,6 @@ def main():
             attempt(p, args.url, f"{n}a private context, {label}", False, creds, "")
             attempt(p, args.url, f"{n}b private context, {label}, allowlist", False, creds, host)
             attempt(p, args.url, f"{n}c normal profile, {label}, allowlist", True, creds, host)
-        if args.user:
-            n = 3 + len(forms)
-            attempt_netonly(p, args.url, f"{n}a Edge as runas /netonly {args.domain}\\{args.user}",
-                            args.domain, args.user, password, "")
-            attempt_netonly(p, args.url, f"{n}b Edge as runas /netonly, allowlist",
-                            args.domain, args.user, password, host)
     print("Done. Copy everything above this line.")
 
 
